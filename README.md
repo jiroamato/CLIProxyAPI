@@ -6,6 +6,84 @@ If you want to use CLIProxyAPI on your desktop, we recommend our [EasyCLIProxyAP
 
 CLIProxyAPI is a proxy server that provides OpenAI/Gemini/Claude/Codex/Grok compatible API interfaces for CLI.
 
+## Quick start from source
+
+You need Go 1.26 or newer. Run the commands below from the repository directory.
+
+### 1. Configure the server and your keys
+
+If you do not already have `config.yaml`, copy the template:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+In PowerShell, use `Copy-Item config.example.yaml config.yaml` instead. If you already have a config, edit it in place.
+
+In `config.yaml`, set the following fields using the current v8 layout. Keep the other template settings, and replace **all** example client keys with a key you choose:
+
+```yaml
+config-version: 8
+server:
+  host: "127.0.0.1"
+  port: 8317
+management:
+  allow-remote: false
+  secret-key: "replace-with-your-management-password"
+  disable-control-panel: false
+access:
+  api-keys:
+    - "replace-with-your-client-key"
+```
+
+There are three separate credentials to configure:
+
+| Credential | Purpose | Where to use it |
+| --- | --- | --- |
+| Client API key | Allows your apps to call this proxy | Set it in `access.api-keys` and use it as your app's API key |
+| Management secret key | Allows you to administer the server | Set it in `management.secret-key` and enter it when logging into the web panel |
+| Provider credential | Allows the proxy to call an upstream model provider | Add a provider API key or complete an OAuth login in step 3 |
+
+The server hashes the management password on startup. Use the original password to log in. Leaving the management secret empty disables the management API. Leaving template client keys in the config puts the server in safe mode and blocks proxy API requests until you replace them.
+
+### 2. Start the server and open the web panel
+
+```bash
+go run ./cmd/server --config config.yaml
+```
+
+Keep this terminal running. When it prints `API server started successfully on: 127.0.0.1:8317`, open **[http://localhost:8317/management.html](http://localhost:8317/management.html)** in your browser. If prompted for the server address, enter `http://localhost:8317`, then log in with your management secret key.
+
+Opening [http://localhost:8317/](http://localhost:8317/) returns JSON describing the API endpoints. This is the expected response; the web panel is at `/management.html`.
+
+The server downloads the panel automatically. If `/management.html` returns 404, check that `management.disable-control-panel` is `false` and look for panel download errors in the server logs. The initial download needs network access. If you changed the port or enabled TLS, adjust the URLs accordingly.
+
+### 3. Connect a model provider
+
+In the web panel, add an upstream provider API key or complete a supported provider's OAuth login. Provider API keys belong in the provider configuration, not in `access.api-keys`. The commented `api-keys` section of [config.example.yaml](config.example.yaml) shows provider-specific configuration examples.
+
+For example, to connect a Codex account through OAuth, run this in another terminal from the same repository directory and complete the browser login:
+
+```bash
+go run ./cmd/server --config config.yaml --codex-login
+```
+
+The running server watches its config and OAuth credential directory for changes. A startup message saying `0 clients` means no upstream credentials have been loaded. Setting only a client API key and a management secret does not connect a provider.
+
+### 4. Verify access and connect your app
+
+Use your **client API key** to list the available models:
+
+```bash
+curl http://localhost:8317/v1/models -H "Authorization: Bearer replace-with-your-client-key"
+```
+
+In PowerShell, use `curl.exe` instead of `curl`. Check that the response's `data` array contains the model you want to use. An empty array means no models are currently available to your client; check the provider credentials and model configuration in the panel.
+
+For an OpenAI-compatible app, set its base URL to `http://localhost:8317/v1`, its API key to your client API key, and its model to an ID returned by `/v1/models`.
+
+## Supported providers
+
 You can access the following providers locally and with multiple CLI accounts through any OpenAI (including Responses), Gemini (including Interactions), or Claude-compatible client or SDK.
 
 <table>
@@ -134,7 +212,7 @@ PackyCode provides special discounts for our software users: register using <a h
 - OpenAI-compatible upstream providers via config (e.g., OpenRouter)
 - Reusable Go SDK for embedding the proxy (see `docs/sdk-usage.md`)
 
-## Getting Started
+## Additional setup guides
 
 CLIProxyAPI Guides: [https://help.router-for.me/](https://help.router-for.me/)
 
