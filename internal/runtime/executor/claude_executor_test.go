@@ -3292,6 +3292,116 @@ func TestEnforceCacheControlLimit_ToolOnlyPayloadStillRespectsLimit(t *testing.T
 	}
 }
 
+func TestClaudeExecutor_NullCacheControlIgnored(t *testing.T) {
+	// 1 real cache_control followed by 5 "cache_control": null blocks.
+	payload := []byte(`{
+		"messages": [
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "block 0", "cache_control": {"type": "ephemeral"}},
+					{"type": "text", "text": "block 1", "cache_control": null},
+					{"type": "text", "text": "block 2", "cache_control": null},
+					{"type": "text", "text": "block 3", "cache_control": null},
+					{"type": "text", "text": "block 4", "cache_control": null},
+					{"type": "text", "text": "block 5", "cache_control": null}
+				]
+			}
+		]
+	}`)
+
+	// countCacheControls must count only valid breakpoints, ignoring null.
+	if got := countCacheControls(payload); got != 1 {
+		t.Fatalf("countCacheControls = %d, want 1 (null cache_control must not be counted)", got)
+	}
+
+	// enforceCacheControlLimit must not strip the real cache breakpoint when nulls are present.
+	out := enforceCacheControlLimit(payload, 4)
+	if got := countCacheControls(out); got != 1 {
+		t.Fatalf("countCacheControls after enforce = %d, want 1", got)
+	}
+	if !gjson.GetBytes(out, "messages.0.content.0.cache_control").Exists() {
+		t.Fatalf("real cache_control at messages.0.content.0 was incorrectly stripped")
+	}
+	if gjson.GetBytes(out, "messages.0.content.0.cache_control.type").String() != "ephemeral" {
+		t.Fatalf("messages.0.content.0.cache_control.type = %q, want ephemeral", gjson.GetBytes(out, "messages.0.content.0.cache_control.type").String())
+	}
+
+	// Auto-injection must not be suppressed by "cache_control": null in system or tools.
+	toolsPayload := []byte(`{
+		"tools": [{"name": "tool1", "description": "desc", "cache_control": null}]
+	}`)
+	injectedTools := injectToolsCacheControl(toolsPayload)
+	if got := gjson.GetBytes(injectedTools, "tools.0.cache_control.type").String(); got != "ephemeral" {
+		t.Fatalf("injectToolsCacheControl should inject cache_control when existing value is null, got %q", got)
+	}
+
+	systemPayload := []byte(`{
+		"system": [{"type": "text", "text": "sys", "cache_control": null}]
+	}`)
+	injectedSystem := injectSystemCacheControl(systemPayload)
+	if got := gjson.GetBytes(injectedSystem, "system.0.cache_control.type").String(); got != "ephemeral" {
+		t.Fatalf("injectSystemCacheControl should inject cache_control when existing value is null, got %q", got)
+	}
+
+	messagesPayload := []byte(`{
+		"messages": [
+			{"role": "user", "content": [{"type": "text", "text": "hello", "cache_control": null}]}
+		]
+	}`)
+	injectedMessages := injectMessagesCacheControl(messagesPayload)
+	if got := gjson.GetBytes(injectedMessages, "messages.0.content.0.cache_control.type").String(); got != "ephemeral" {
+		t.Fatalf("injectMessagesCacheControl should inject cache_control when existing value is null, got %q", got)
+	}
+
+	// enforceCacheControlLimit stripping loop when total real marks > 4 and nulls are present.
+	excessWithNullPayload := []byte(`{
+		"tools": [
+			{"name": "t1", "cache_control": {"type": "ephemeral"}},
+			{"name": "t2", "cache_control": null},
+			{"name": "t3", "cache_control": {"type": "ephemeral"}}
+		],
+		"system": [
+			{"type": "text", "text": "s1", "cache_control": {"type": "ephemeral"}},
+			{"type": "text", "text": "s2", "cache_control": null}
+		],
+		"messages": [
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "u1", "cache_control": {"type": "ephemeral"}},
+					{"type": "text", "text": "u2", "cache_control": null},
+					{"type": "text", "text": "u3", "cache_control": {"type": "ephemeral"}}
+				]
+			}
+		]
+	}`)
+	// Total real marks = 2 tools + 1 system + 2 messages = 5 real marks (and 3 nulls).
+	// Limit 4 means 1 real mark should be stripped (specifically t1, non-last tool).
+	outExcess := enforceCacheControlLimit(excessWithNullPayload, 4)
+	if got := countCacheControls(outExcess); got != 4 {
+		t.Fatalf("countCacheControls after enforce with excess = %d, want 4", got)
+	}
+	if gjson.GetBytes(outExcess, "tools.0.cache_control").Exists() {
+		t.Fatalf("tools.0.cache_control should be removed first (non-last tool)")
+	}
+	if !gjson.GetBytes(outExcess, "tools.2.cache_control").Exists() {
+		t.Fatalf("last tool cache_control should be preserved")
+	}
+
+	// normalizeCacheControlTTL must not treat "cache_control": null as a 5m breakpoint that downgrades 1h TTL.
+	mixedTTLPayload := []byte(`{
+		"system": [
+			{"type": "text", "text": "sys0", "cache_control": null},
+			{"type": "text", "text": "sys1", "cache_control": {"type": "ephemeral", "ttl": "1h"}}
+		]
+	}`)
+	normalized := normalizeCacheControlTTL(mixedTTLPayload)
+	if got := gjson.GetBytes(normalized, "system.1.cache_control.ttl").String(); got != "1h" {
+		t.Fatalf("normalizeCacheControlTTL downgraded 1h TTL due to null cache_control: %s", normalized)
+	}
+}
+
 func TestClaudeExecutor_ExecuteSanitizesSignaturesBeforeUpstream(t *testing.T) {
 	var seenBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4342,7 +4452,7 @@ func TestCheckSystemInstructionsWithMode_TerminalUserRunKeepsSystemTopLevel(t *t
 		`{"type":"text","text":"second guidance"}],` +
 		`"messages":[{"role":"user","content":"first"},{"role":"user","content":"second"}]}`)
 
-	out := checkSystemInstructionsWithMode(payload, false)
+	out := checkSystemInstructionsWithMode(payload, false, true)
 	if got := gjson.GetBytes(out, "system.#").Int(); got != 4 {
 		t.Fatalf("top-level system block count = %d, want 4 (2 identity + 2 caller blocks): %s", got, out)
 	}
@@ -4359,41 +4469,71 @@ func TestCheckSystemInstructionsWithMode_TerminalUserRunKeepsSystemTopLevel(t *t
 	}
 }
 
-func TestCheckSystemInstructionsWithMode_SingleTerminalUserKeepsSystemTopLevel(t *testing.T) {
+func TestCheckSystemInstructionsWithMode_SingleTerminalUserRelocatesSystemToMessage(t *testing.T) {
 	payload := []byte(`{"model":"claude-opus-5","system":[` +
 		`{"type":"text","text":"caller guidance"}],` +
 		`"messages":[{"role":"user","content":"request"}]}`)
 
 	out := checkSystemInstructionsWithMode(payload, false)
-	if got := gjson.GetBytes(out, "system.#").Int(); got != 3 {
-		t.Fatalf("top-level system block count = %d, want 3 (2 identity + caller block): %s", got, out)
+	if got := gjson.GetBytes(out, "system.#").Int(); got != 2 {
+		t.Fatalf("top-level system block count = %d, want 2 Claude Code blocks: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 1 {
-		t.Fatalf("message count = %d, want 1 without trailing system turn: %s", got, out)
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 2 {
+		t.Fatalf("message count = %d, want user and relocated system turns: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "system.2.text").String(); got != "caller guidance" {
-		t.Fatalf("system.2.text = %q, want caller guidance", got)
-	}
-	if got := gjson.GetBytes(out, "system.2.cache_control.type").String(); got != "ephemeral" {
-		t.Fatalf("system.2.cache_control.type = %q, want ephemeral", got)
-	}
+	assertClaudeMidConversationSystemMessage(t, out, 1, "caller guidance", "")
 }
 
-func TestCheckSystemInstructionsWithMode_LeadingUserRunKeepsSystemTopLevelAfterAssistantTurn(t *testing.T) {
+func TestCheckSystemInstructionsWithMode_LeadingUserRunRelocatesSystemAfterAssistantTurn(t *testing.T) {
 	payload := []byte(`{"model":"claude-opus-5","system":[` +
 		`{"type":"text","text":"caller guidance"}],` +
 		`"messages":[{"role":"user","content":"prompt"},{"role":"user","content":"context"},` +
 		`{"role":"assistant","content":"answer"},{"role":"user","content":"follow-up"}]}`)
 
 	out := checkSystemInstructionsWithMode(payload, false)
-	if got := gjson.GetBytes(out, "system.#").Int(); got != 3 {
-		t.Fatalf("top-level system block count = %d, want 3 (2 identity + caller block): %s", got, out)
+	if got := gjson.GetBytes(out, "system.#").Int(); got != 2 {
+		t.Fatalf("top-level system block count = %d, want 2 Claude Code blocks: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "system.2.text").String(); got != "caller guidance" {
-		t.Fatalf("system.2.text = %q, want caller guidance", got)
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 5 {
+		t.Fatalf("message count = %d, want inserted system turn: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 4 {
-		t.Fatalf("message count = %d, want unchanged conversation shape: %s", got, out)
+	assertClaudeMidConversationSystemMessage(t, out, 2, "caller guidance", "")
+}
+
+func TestCheckSystemInstructionsWithMode_ExplicitTopLevelPolicyKeepsAffectedSystemPrompts(t *testing.T) {
+	tests := []struct {
+		name          string
+		payload       string
+		wantMessages  int64
+		wantSystemTxt string
+	}{
+		{
+			name:          "single terminal user",
+			payload:       `{"model":"claude-opus-5","system":[{"type":"text","text":"caller guidance"}],"messages":[{"role":"user","content":"request"}]}`,
+			wantMessages:  1,
+			wantSystemTxt: "caller guidance",
+		},
+		{
+			name:          "leading user run",
+			payload:       `{"model":"claude-opus-5","system":[{"type":"text","text":"caller guidance"}],"messages":[{"role":"user","content":"prompt"},{"role":"user","content":"context"},{"role":"assistant","content":"answer"},{"role":"user","content":"follow-up"}]}`,
+			wantMessages:  4,
+			wantSystemTxt: "caller guidance",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			out := checkSystemInstructionsWithMode([]byte(test.payload), false, true)
+			if got := gjson.GetBytes(out, "system.#").Int(); got != 3 {
+				t.Fatalf("top-level system block count = %d, want 3: %s", got, out)
+			}
+			if got := gjson.GetBytes(out, "system.2.text").String(); got != test.wantSystemTxt {
+				t.Fatalf("system.2.text = %q, want %q", got, test.wantSystemTxt)
+			}
+			if got := gjson.GetBytes(out, "messages.#").Int(); got != test.wantMessages {
+				t.Fatalf("message count = %d, want %d: %s", got, test.wantMessages, out)
+			}
+		})
 	}
 }
 
@@ -4403,7 +4543,7 @@ func TestRelocateClaudeSystemPromptForCountTokens_TerminalUserRunKeepsSystemTopL
 		`{"type":"text","text":"second guidance"}],` +
 		`"messages":[{"role":"user","content":"first"},{"role":"user","content":"second"}]}`)
 
-	out := relocateClaudeSystemPromptForCountTokens(payload, false)
+	out := relocateClaudeSystemPromptForCountTokensWithPolicy(payload, false, false, true)
 	if got := gjson.GetBytes(out, "system.#").Int(); got != 2 {
 		t.Fatalf("top-level system block count = %d, want 2 caller blocks: %s", got, out)
 	}
@@ -4420,39 +4560,35 @@ func TestRelocateClaudeSystemPromptForCountTokens_TerminalUserRunKeepsSystemTopL
 	}
 }
 
-func TestRelocateClaudeSystemPromptForCountTokens_SingleTerminalUserKeepsSystemTopLevel(t *testing.T) {
+func TestRelocateClaudeSystemPromptForCountTokens_SingleTerminalUserRelocatesSystemToMessage(t *testing.T) {
 	payload := []byte(`{"model":"claude-opus-5","system":[` +
 		`{"type":"text","text":"caller guidance"}],` +
 		`"messages":[{"role":"user","content":"request"}]}`)
 
 	out := relocateClaudeSystemPromptForCountTokens(payload, false)
-	if got := gjson.GetBytes(out, "system.#").Int(); got != 1 {
-		t.Fatalf("top-level system block count = %d, want 1 caller block: %s", got, out)
+	if gjson.GetBytes(out, "system").Exists() {
+		t.Fatalf("top-level system field should be removed: %s", out)
 	}
-	if got := gjson.GetBytes(out, "system.0.text").String(); got != "caller guidance" {
-		t.Fatalf("system.0.text = %q, want caller guidance", got)
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 2 {
+		t.Fatalf("message count = %d, want user and relocated system turns: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 1 {
-		t.Fatalf("message count = %d, want 1 without trailing system turn: %s", got, out)
-	}
+	assertClaudeMidConversationSystemMessage(t, out, 1, "caller guidance", "")
 }
 
-func TestRelocateClaudeSystemPromptForCountTokens_LeadingUserRunKeepsSystemTopLevelAfterAssistantTurn(t *testing.T) {
+func TestRelocateClaudeSystemPromptForCountTokens_LeadingUserRunRelocatesSystemAfterAssistantTurn(t *testing.T) {
 	payload := []byte(`{"model":"claude-opus-5","system":[` +
 		`{"type":"text","text":"caller guidance"}],` +
 		`"messages":[{"role":"user","content":"prompt"},{"role":"user","content":"context"},` +
 		`{"role":"assistant","content":"answer"},{"role":"user","content":"follow-up"}]}`)
 
 	out := relocateClaudeSystemPromptForCountTokens(payload, false)
-	if got := gjson.GetBytes(out, "system.#").Int(); got != 1 {
-		t.Fatalf("top-level system block count = %d, want 1 caller block: %s", got, out)
+	if gjson.GetBytes(out, "system").Exists() {
+		t.Fatalf("top-level system field should be removed: %s", out)
 	}
-	if got := gjson.GetBytes(out, "system.0.text").String(); got != "caller guidance" {
-		t.Fatalf("system.0.text = %q, want caller guidance", got)
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 5 {
+		t.Fatalf("message count = %d, want inserted system turn: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 4 {
-		t.Fatalf("message count = %d, want unchanged conversation shape: %s", got, out)
-	}
+	assertClaudeMidConversationSystemMessage(t, out, 2, "caller guidance", "")
 }
 
 func TestRelocateClaudeSystemPromptForCountTokensKeepsBlocksSeparate(t *testing.T) {
@@ -7900,11 +8036,8 @@ func TestClaudeExecutor_ExecuteOAuthCustomToolMCPAliasRoundTrip(t *testing.T) {
 	if got := gjson.GetBytes(upstreamBody, "system.1.text").String(); got != claudeCodeCLIIdentity {
 		t.Fatalf("Messages system.1.text = %q, want official CLI identity", got)
 	}
-	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 3 {
-		t.Fatalf("Messages top-level system block count = %d, want 3", got)
-	}
-	if got := gjson.GetBytes(upstreamBody, "system.2.text").String(); got != "messages-system-prompt" {
-		t.Fatalf("Messages system.2.text = %q, want messages-system-prompt", got)
+	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 2 {
+		t.Fatalf("Messages top-level system block count = %d, want 2 Claude Code blocks", got)
 	}
 	content := gjson.GetBytes(upstreamBody, "messages.0.content").Array()
 	if len(content) != 2 {
@@ -7912,9 +8045,10 @@ func TestClaudeExecutor_ExecuteOAuthCustomToolMCPAliasRoundTrip(t *testing.T) {
 	}
 	assertClaudeCodeCurrentDateBlock(t, content[0])
 	assertEphemeralUserTextBlock(t, content[1], "search", "1h")
-	if got := gjson.GetBytes(upstreamBody, "messages.#").Int(); got != 1 {
-		t.Fatalf("Messages count = %d, want no trailing system turn", got)
+	if got := gjson.GetBytes(upstreamBody, "messages.#").Int(); got != 2 {
+		t.Fatalf("Messages count = %d, want user and relocated system turns", got)
 	}
+	assertClaudeMidConversationSystemMessage(t, upstreamBody, 1, "messages-system-prompt", "1h")
 }
 
 func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing.T) {
@@ -7982,11 +8116,8 @@ func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing
 	if got := gjson.GetBytes(upstreamBody, "system.1.text").String(); got != claudeCodeCLIIdentity {
 		t.Fatalf("streaming system.1.text = %q, want official CLI identity", got)
 	}
-	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 3 {
-		t.Fatalf("streaming top-level system block count = %d, want 3", got)
-	}
-	if got := gjson.GetBytes(upstreamBody, "system.2.text").String(); got != "stream-system-prompt" {
-		t.Fatalf("streaming system.2.text = %q, want stream-system-prompt", got)
+	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 2 {
+		t.Fatalf("streaming top-level system block count = %d, want 2 Claude Code blocks", got)
 	}
 	content := gjson.GetBytes(upstreamBody, "messages.0.content").Array()
 	if len(content) != 2 {
@@ -7994,9 +8125,10 @@ func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing
 	}
 	assertClaudeCodeCurrentDateBlock(t, content[0])
 	assertEphemeralUserTextBlock(t, content[1], "fetch", "1h")
-	if got := gjson.GetBytes(upstreamBody, "messages.#").Int(); got != 1 {
-		t.Fatalf("streaming message count = %d, want no trailing system turn", got)
+	if got := gjson.GetBytes(upstreamBody, "messages.#").Int(); got != 2 {
+		t.Fatalf("streaming message count = %d, want user and relocated system turns", got)
 	}
+	assertClaudeMidConversationSystemMessage(t, upstreamBody, 1, "stream-system-prompt", "1h")
 	assertClaudeCredentialIdentity(t, upstreamBody, upstreamHeaders, deviceIDs, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 	if !strings.Contains(downstream.String(), `"name":"fetch_url"`) {
 		t.Fatalf("downstream stream did not restore fetch_url: %s", downstream.String())
