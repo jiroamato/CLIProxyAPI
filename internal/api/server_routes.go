@@ -79,6 +79,7 @@ func (s *Server) setupRoutes() {
 		v1.POST("/videos/extensions", openaiHandlers.XAIVideosExtensions)
 		v1.GET("/videos/:request_id", openaiHandlers.XAIVideosRetrieve)
 		v1.POST("/audio/speech", openaiHandlers.AudioSpeech)
+		v1.POST("/audio/transcriptions", s.codexLiveHandler.HandleTranscription)
 		v1.POST("/tts", openaiHandlers.XAITTS)
 		v1.POST("/messages", claudeCodeHandlers.ClaudeMessages)
 		v1.POST("/messages/count_tokens", claudeCodeHandlers.ClaudeCountTokens)
