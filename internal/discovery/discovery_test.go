@@ -522,6 +522,9 @@ func TestAdvertiserAndBrowser_Integration(t *testing.T) {
 	browser := NewZeroconfBrowser(ifaces...)
 	results, err := browser.Browse(browseCtx, DefaultServiceType, DefaultDomain)
 	if err != nil {
+		if strings.Contains(err.Error(), "failed to join any of these interfaces") {
+			t.Skipf("live multicast is unavailable on this host: %v", err)
+		}
 		t.Fatalf("browse failed: %v", err)
 	}
 
