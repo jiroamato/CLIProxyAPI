@@ -40,4 +40,4 @@ In Settings, choose AI Models, Speech-to-Text, then Dictation:
 4. Set the model to `codex-transcribe`.
 5. Leave custom dictionary prompts empty for this transcription route. A separately configured GPT cleanup model can still apply text edits after transcription.
 
-Meetings and audio uploads have separate engine settings. Configure them independently if needed. The model alias is entered manually; the dynamic coding-model catalog does not advertise this backend-selected speech model.
+Meetings and audio uploads have separate engine settings. Configure them independently if needed. The standard `/v1/models` catalog advertises `codex-transcribe` when a non-disabled Codex OAuth login is registered, so OpenWhispr's connection test can validate it. The specialized Codex coding-model catalog remains separate.

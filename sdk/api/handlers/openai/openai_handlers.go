@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	codexlive "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/live"
 	codexmodels "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/models"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
@@ -22,6 +23,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	responsesconverter "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/openai/openai/responses"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -102,6 +104,22 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 		filteredModels[i] = filteredModel
 	}
 
+	// File-transcription routes are independent of the coding-model registry.
+	// BYOK clients such as OpenWhispr require the speech alias in /v1/models.
+	if h.BaseAPIHandler != nil && h.AuthManager.HasProviderAuthKind("codex", auth.AuthKindOAuth) {
+		found := false
+		for _, model := range filteredModels {
+			if model["id"] == codexlive.TranscriptionModel {
+				found = true
+				break
+			}
+		}
+		if !found {
+			filteredModels = append(filteredModels, map[string]any{
+				"id": codexlive.TranscriptionModel, "object": "model", "created": int64(0), "owned_by": "openai",
+			})
+		}
+	}
 	h.WriteModelListResponse(c, h.HandlerType(), gin.H{
 		"object": "list",
 		"data":   filteredModels,

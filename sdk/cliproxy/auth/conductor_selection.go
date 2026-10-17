@@ -1090,7 +1090,17 @@ func (m *Manager) AvailableProviders() []string {
 // the provider. Disabled auths (Disabled flag or StatusDisabled) are excluded to match the
 // behavior of auth selection, which refuses to pick disabled credentials.
 func (m *Manager) HasProviderAuth(provider string) bool {
+	return m.HasProviderAuthKind(provider, "")
+}
+
+// HasProviderAuthKind reports whether a non-disabled credential of the requested
+// kind exists. An empty kind includes all kinds, matching HasProviderAuth.
+func (m *Manager) HasProviderAuthKind(provider, kind string) bool {
 	if m == nil {
+		return false
+	}
+	normalizedKind := normalizeAuthKind(kind)
+	if kind != "" && normalizedKind == "" {
 		return false
 	}
 	targetKey := canonicalSchedulingProvider(provider)
@@ -1103,7 +1113,7 @@ func (m *Manager) HasProviderAuth(provider string) bool {
 		if auth == nil || auth.Disabled || auth.Status == StatusDisabled {
 			continue
 		}
-		if canonicalSchedulingProvider(auth.Provider) == targetKey {
+		if canonicalSchedulingProvider(auth.Provider) == targetKey && (normalizedKind == "" || auth.AuthKind() == normalizedKind) {
 			return true
 		}
 	}

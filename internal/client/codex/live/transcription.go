@@ -24,7 +24,9 @@ import (
 )
 
 const (
-	transcriptionModel       = "codex-transcribe"
+	// TranscriptionModel is the backend-selected speech alias exposed to clients.
+	TranscriptionModel       = "codex-transcribe"
+	transcriptionModel       = TranscriptionModel
 	transcriptionUploadLimit = 26 << 20
 	transcriptionReplyLimit  = 4 << 20
 	transcriptionFieldLimit  = 64 << 10
