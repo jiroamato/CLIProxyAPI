@@ -76,10 +76,13 @@ func TestTranscriptionUsesOAuthAndPreservesAudio(t *testing.T) {
 	for _, format := range []string{"json", "text"} {
 		t.Run(format, func(t *testing.T) {
 			handler, executor := transcriptionFixture(t, 200, `{"text":"Hello world","extra":"not-public"}`)
-			body, ct := transcriptionUpload(t, map[string]string{"model": transcriptionModel, "language": "en", "response_format": format, "stream": "false"}, 1)
+			body, ct := transcriptionUpload(t, map[string]string{"model": transcriptionModel, "language": "en", "response_format": format, "stream": "false", "prompt": "private-dictionary"}, 1)
 			response := serveTranscription(handler, body, ct)
 			if response.Code != 200 {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body)
+			}
+			if response.Header().Get("X-CLIProxy-Transcription-Prompt") != "ignored" {
+				t.Fatal("ignored dictionary hint was not disclosed")
 			}
 			if format == "text" {
 				if response.Body.String() != "Hello world" || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/plain") {
@@ -128,13 +131,12 @@ func TestTranscriptionUsesOAuthAndPreservesAudio(t *testing.T) {
 
 func TestTranscriptionRejectsUnsupportedRequestsBeforeUpstream(t *testing.T) {
 	for name, fields := range map[string]map[string]string{
-		"missing model":     {},
-		"chat model":        {"model": "gpt-6.1-sol"},
-		"streaming":         {"model": transcriptionModel, "stream": "true"},
-		"subtitles":         {"model": transcriptionModel, "response_format": "srt"},
-		"diarization":       {"model": "gpt-4o-transcribe-diarize"},
-		"dictionary prompt": {"model": transcriptionModel, "prompt": "private-dictionary"},
-		"long field":        {"model": transcriptionModel, "language": strings.Repeat("a", transcriptionFieldLimit+1)},
+		"missing model": {},
+		"chat model":    {"model": "gpt-6.1-sol"},
+		"streaming":     {"model": transcriptionModel, "stream": "true"},
+		"subtitles":     {"model": transcriptionModel, "response_format": "srt"},
+		"diarization":   {"model": "gpt-4o-transcribe-diarize"},
+		"long field":    {"model": transcriptionModel, "language": strings.Repeat("a", transcriptionFieldLimit+1)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			handler, executor := transcriptionFixture(t, 200, `{"text":"wrong"}`)
@@ -215,7 +217,7 @@ func TestTranscriptionDiagnosticsExcludeCredentialsAndAudio(t *testing.T) {
 		if err := handler.UpdateConfig(&config.Config{SDKConfig: config.SDKConfig{RequestLog: fullLogging}}); err != nil {
 			t.Fatal(err)
 		}
-		body, ct := transcriptionUpload(t, map[string]string{"model": transcriptionModel}, 1)
+		body, ct := transcriptionUpload(t, map[string]string{"model": transcriptionModel, "prompt": "private-dictionary"}, 1)
 		request := httptest.NewRequest(http.MethodPost, "/v1/audio/transcriptions", bytes.NewReader(body))
 		request.Header.Set("Content-Type", ct)
 		request.Header.Set("Authorization", "Bearer downstream-client-key")
@@ -241,7 +243,7 @@ func TestTranscriptionDiagnosticsExcludeCredentialsAndAudio(t *testing.T) {
 			}
 		}
 		diagnostics.Write(response.Body.Bytes())
-		for _, secret := range []string{"downstream-client-key", "upstream-token", "secret-cookie", "RIFF-private-audio-data", "never-use-this-key"} {
+		for _, secret := range []string{"downstream-client-key", "upstream-token", "secret-cookie", "RIFF-private-audio-data", "never-use-this-key", "private-dictionary"} {
 			if strings.Contains(diagnostics.String(), secret) {
 				t.Fatalf("private data present in diagnostics with full logging=%v", fullLogging)
 			}
