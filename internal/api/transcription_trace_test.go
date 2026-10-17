@@ -135,7 +135,7 @@ func TestTranscriptionHTTPStackTrace(t *testing.T) {
 			defer proxy.Close()
 			var body bytes.Buffer
 			writer := multipart.NewWriter(&body)
-			for name, value := range map[string]string{"model": "codex-transcribe", "language": "en", "response_format": tc.format} {
+			for name, value := range map[string]string{"model": "codex-transcribe", "language": "en", "response_format": tc.format, "prompt": "Synthetic dictionary term"} {
 				if err := writer.WriteField(name, value); err != nil {
 					t.Fatal(err)
 				}
@@ -205,6 +205,9 @@ func TestTranscriptionHTTPStackTrace(t *testing.T) {
 			t.Logf("Native upstream transport stack:\n%s", transportStack)
 			if response.Header.Get("Retry-After") != "30" {
 				t.Fatal("upstream retry guidance was lost")
+			}
+			if response.Header.Get("X-CLIProxy-Transcription-Prompt") != "ignored" {
+				t.Fatal("ignored dictionary hint was not disclosed")
 			}
 		})
 	}

@@ -34,9 +34,10 @@ const (
 )
 
 type transcriptionRequest struct {
-	body        []byte
-	contentType string
-	format      string
+	body          []byte
+	contentType   string
+	format        string
+	ignoredPrompt bool
 }
 
 // HandleTranscription adapts file transcription to the ChatGPT OAuth backend.
@@ -51,6 +52,9 @@ func (h *Handler) HandleTranscription(c *gin.Context) {
 		}
 		writeTranscriptionError(c, status, "invalid_transcription_request", errParse.Error())
 		return
+	}
+	if upload.ignoredPrompt {
+		c.Header("X-CLIProxy-Transcription-Prompt", "ignored")
 	}
 	if h == nil || h.authManager == nil {
 		writeTranscriptionError(c, http.StatusServiceUnavailable, "transcription_unavailable", "Codex OAuth authentication is unavailable")
@@ -237,6 +241,11 @@ func parseTranscription(c *gin.Context) (transcriptionRequest, error) {
 			if len(value) > 128 {
 				return result, errors.New("Invalid transcription language")
 			}
+		case "prompt":
+			// OpenWhispr automatically sends dictionary hints, including its agent
+			// name. This backend has no supported prompt parameter, so accept the
+			// optional hint without forwarding or logging its contents.
+			result.ignoredPrompt = strings.TrimSpace(value) != ""
 		case "stream":
 			if value != "false" {
 				return result, errors.New("Streaming is not supported by ChatGPT OAuth file transcription")
