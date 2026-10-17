@@ -296,6 +296,10 @@ func isResponsesWebsocketUpgrade(req *http.Request) bool {
 }
 
 func shouldCaptureRequestBody(loggerEnabled bool, req *http.Request) bool {
+	// Audio uploads must not be persisted even when full request logging is enabled.
+	if req != nil && req.URL != nil && req.URL.Path == "/v1/audio/transcriptions" {
+		return false
+	}
 	if loggerEnabled {
 		return true
 	}

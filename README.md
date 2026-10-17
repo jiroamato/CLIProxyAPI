@@ -238,6 +238,8 @@ Modern Ant Design-based management console for CLIProxyAPI v8+, combining CPAMC-
 
 ## SDK Docs
 
+- [Audio transcription through Codex OAuth](docs/audio-transcription.md), including OpenWhispr setup
+
 - Usage: [docs/sdk-usage.md](docs/sdk-usage.md)
 - Advanced (executors & translators): [docs/sdk-advanced.md](docs/sdk-advanced.md)
 - Access: [docs/sdk-access.md](docs/sdk-access.md)

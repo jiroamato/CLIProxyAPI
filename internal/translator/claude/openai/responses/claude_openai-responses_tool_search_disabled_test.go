@@ -42,7 +42,8 @@ func renderToolSearchGolden(fixtures toolSearchGoldenFixtures, c toolSearchGolde
 		return toolSearchGoldenCreatedAt.ReplaceAllString(string(raw), `"created_at":0`)
 	}
 	translated, errConvert := ConvertOpenAIResponsesRequestToClaude("claude-sonnet-4-5", c.Request, true)
-	result := toolSearchGoldenOutput{Request: string(translated)}
+	// Raw tool declarations retain checkout whitespace; normalize Windows line endings.
+	result := toolSearchGoldenOutput{Request: strings.ReplaceAll(string(translated), "\r\n", "\n")}
 	if errConvert != nil {
 		result.RequestError = errConvert.Error()
 	}
