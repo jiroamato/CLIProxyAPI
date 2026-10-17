@@ -27,6 +27,7 @@ const (
 	// TranscriptionModel is the backend-selected speech alias exposed to clients.
 	TranscriptionModel       = "codex-transcribe"
 	transcriptionModel       = TranscriptionModel
+	transcriptionUserAgent   = "codex-tui/0.154.0 (Windows 11; x86_64)"
 	transcriptionUploadLimit = 26 << 20
 	transcriptionReplyLimit  = 4 << 20
 	transcriptionFieldLimit  = 64 << 10
@@ -89,7 +90,7 @@ func (h *Handler) HandleTranscription(c *gin.Context) {
 	headers := protocolHeaders(c.Request.Header)
 	headers.Set("Content-Type", upload.contentType)
 	headers.Set("Accept", "application/json")
-	headers.Set("User-Agent", "codex-tui/0.154.0 (Windows 11; x86_64)")
+	headers.Set("User-Agent", transcriptionUserAgent)
 	setAccountHeader(headers, selected)
 	request, errRequest := h.authManager.NewHttpRequest(ctx, selected, http.MethodPost, transcriptionUpstreamURL(selected.Attributes["base_url"]), upload.body, headers)
 	if errRequest != nil {
