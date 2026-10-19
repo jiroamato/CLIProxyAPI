@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
@@ -143,11 +144,65 @@ func logClaudeSignatureSanitizeReport(ctx context.Context, baseModel string, rep
 // omit max_tokens. Prefer registered model metadata before using a fallback.
 const defaultModelMaxTokens = 1024
 
+// stripTranslatedDefaultMaxTokens removes the translator-synthesized default
+// max_tokens from originalTranslated when the caller's original request did not
+// explicitly supply an output token limit in the source protocol, allowing
+// payload.default rules targeting max_tokens to take effect.
+func stripTranslatedDefaultMaxTokens(from sdktranslator.Format, originalPayload, originalTranslated []byte) []byte {
+	if len(originalTranslated) == 0 || from == sdktranslator.FormatClaude {
+		return originalTranslated
+	}
+	hasExplicitMaxTokens := func(paths ...string) bool {
+		for _, path := range paths {
+			if v := gjson.GetBytes(originalPayload, path); v.Exists() && v.Type != gjson.Null {
+				return true
+			}
+		}
+		return false
+	}
+	switch from {
+	case sdktranslator.FormatOpenAI:
+		if hasExplicitMaxTokens("max_tokens", "max_completion_tokens") {
+			return originalTranslated
+		}
+	case sdktranslator.FormatOpenAIResponse:
+		if hasExplicitMaxTokens("max_output_tokens") {
+			return originalTranslated
+		}
+	case sdktranslator.FormatGemini:
+		if hasExplicitMaxTokens("generationConfig.maxOutputTokens") {
+			return originalTranslated
+		}
+	default:
+		return originalTranslated
+	}
+	stripped, errDelete := sjson.DeleteBytes(originalTranslated, "max_tokens")
+	if errDelete != nil {
+		return originalTranslated
+	}
+	return stripped
+}
+
 func NewClaudeExecutor(cfg *config.Config) *ClaudeExecutor {
 	return &ClaudeExecutor{cfg: cfg, oauthToolAliases: &claudeOAuthToolAliasStore{}}
 }
 
 func (e *ClaudeExecutor) Identifier() string { return "claude" }
+
+func (e *ClaudeExecutor) claudeWebSearchResultCacheScope(ctx context.Context, from sdktranslator.Format, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, originalPayload []byte) (string, time.Duration, int) {
+	if e == nil || e.cfg == nil || !e.cfg.Client.Codex.WebSearchResultCache.Enabled {
+		return "", 0, 0
+	}
+	if !sourceFormatEqual(from, sdktranslator.FormatOpenAIResponse) {
+		return "", 0, 0
+	}
+	sessionKey := xaiReasoningReplayIsolateSessionKey(ctx, codexReasoningReplaySessionKey(ctx, from, req, opts, originalPayload))
+	if sessionKey == "" {
+		return "", 0, 0
+	}
+	cacheCfg := e.cfg.Client.Codex.WebSearchResultCache
+	return sessionKey, cacheCfg.EffectiveTTL(), cacheCfg.EffectiveLimit()
+}
 
 var _ cliproxyauth.NativeToolSearchSupport = (*ClaudeExecutor)(nil)
 
