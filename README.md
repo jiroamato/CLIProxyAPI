@@ -1,3 +1,19 @@
+## About this fork
+
+This is Jiro Amato's fork of [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI). It tracks upstream `main` and adds speech-to-text through an existing ChatGPT/Codex OAuth login, so you don't need an OpenAI Platform API key.
+
+What the fork adds:
+
+- `POST /v1/audio/transcriptions` transcribes an uploaded audio file through ChatGPT's speech backend. Use the model `codex-transcribe`. Names like `whisper-1` and `gpt-4o-transcribe` work as aliases, but ChatGPT still picks the actual speech model.
+- `GET /v1/audio/transcriptions/stream` opens a WebSocket for live dictation with partial transcripts. Each session stays pinned to one Codex OAuth credential, and OAuth tokens never reach the client.
+- `/v1/models` lists `codex-transcribe` whenever an enabled Codex OAuth login exists, so BYOK clients like OpenWhispr pass their connection test.
+- The file route accepts the dictionary `prompt` hint that OpenWhispr sends, drops it before calling upstream, and returns `X-CLIProxy-Transcription-Prompt: ignored`.
+- Uploaded audio, dictation frames, and transcripts stay out of request logs and diagnostics.
+
+Request fields, limits, and OpenWhispr setup are in [docs/audio-transcription.md](docs/audio-transcription.md).
+
+---
+
 # CLI Proxy API
 
 English | [中文](README_CN.md) | [日本語](README_JA.md)
