@@ -24,7 +24,7 @@ CLIProxyAPI is a proxy server that provides OpenAI/Gemini/Claude/Codex/Grok comp
 
 ## Quick start from source
 
-You need Go 1.26 or newer. Run the commands below from the repository directory.
+You need Go 1.26.10 or newer. Run the commands below from the repository directory.
 
 ### 1. Configure the server and your keys
 
