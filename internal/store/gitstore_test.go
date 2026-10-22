@@ -1799,12 +1799,20 @@ func corruptGitRepository(t *testing.T, repoDir string) {
 		t.Fatalf("open repository before corruption: %v", errOpen)
 	}
 	defer func() {
-		if errClose := repo.Close(); errClose != nil {
-			t.Errorf("close corrupted repository: %v", errClose)
+		if repo != nil {
+			if errClose := repo.Close(); errClose != nil {
+				t.Errorf("close corrupted repository: %v", errClose)
+			}
 		}
 	}()
 	if errRepack := repo.RepackObjects(&git.RepackConfig{}); errRepack != nil {
 		t.Fatalf("repack repository objects: %v", errRepack)
+	}
+	// Release cached objects and pack handles before corrupting the on-disk repository.
+	errClose := repo.Close()
+	repo = nil
+	if errClose != nil {
+		t.Fatalf("close repository before corruption: %v", errClose)
 	}
 	objectsDir := filepath.Join(repoDir, ".git", "objects")
 	objectEntries, errReadDir := os.ReadDir(objectsDir)
@@ -1829,6 +1837,10 @@ func corruptGitRepository(t *testing.T, repoDir string) {
 		if errRemove := os.Remove(packfile); errRemove != nil {
 			t.Fatalf("remove packfile %s: %v", filepath.Base(packfile), errRemove)
 		}
+	}
+	repo, errOpen = git.PlainOpen(repoDir)
+	if errOpen != nil {
+		t.Fatalf("open repository after corruption: %v", errOpen)
 	}
 	if errVerify := verifyRepositoryHead(repo); !isRepositoryCorruptionError(errVerify) {
 		t.Fatalf("verifyRepositoryHead error = %v, want repository corruption", errVerify)
