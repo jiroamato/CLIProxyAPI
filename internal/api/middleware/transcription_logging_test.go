@@ -20,3 +20,12 @@ func TestTranscriptionAudioIsNotCapturedWithFullRequestLogging(t *testing.T) {
 		t.Fatal("ordinary request logging changed")
 	}
 }
+
+func TestTranscriptionAudioIsNotCapturedInErrorOnlyMode(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/audio/transcriptions", strings.NewReader("private-audio"))
+	request.Header.Set("Content-Type", "audio/wav")
+	capture := attachDeferredRequestBodyCapture(request, nil, &RequestInfo{}, false, false)
+	if capture == nil || !capture.skipCapture {
+		t.Fatal("audio body is eligible for error-only capture")
+	}
+}

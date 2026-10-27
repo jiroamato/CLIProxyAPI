@@ -156,6 +156,8 @@ func TestTranscriptionHTTPStackTrace(t *testing.T) {
 			}
 			request.Header.Set("Content-Type", writer.FormDataContentType())
 			request.Header.Set("Cookie", "private-client-cookie")
+			// Response compression defers header writes past the handler chain; keep it out of the trace.
+			request.Header.Set("Accept-Encoding", "identity")
 			if tc.key != "" {
 				request.Header.Set("Authorization", "Bearer "+tc.key)
 			}
