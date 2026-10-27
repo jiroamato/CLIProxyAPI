@@ -156,6 +156,8 @@ func TestTranscriptionHTTPStackTrace(t *testing.T) {
 			}
 			request.Header.Set("Content-Type", writer.FormDataContentType())
 			request.Header.Set("Cookie", "private-client-cookie")
+			// Response compression defers header writes past the handler chain; keep it out of the trace.
+			request.Header.Set("Accept-Encoding", "identity")
 			if tc.key != "" {
 				request.Header.Set("Authorization", "Bearer "+tc.key)
 			}
@@ -180,10 +182,8 @@ func TestTranscriptionHTTPStackTrace(t *testing.T) {
 				t.Fatal("response stack was not captured")
 			}
 			responseStack := <-responseFrames
-			// Response compression commits headers after the handler chain returns, so only
-			// the engine frame is stable here; auth traversal is checked on the transport stack.
-			if !strings.Contains(responseStack, "(*Engine).ServeHTTP") {
-				t.Fatal("response stack did not traverse the HTTP engine")
+			if !strings.Contains(responseStack, "AuthMiddleware") {
+				t.Fatal("response stack did not traverse authentication middleware")
 			}
 			t.Logf("HTTP %d response stack:\n%s", response.StatusCode, responseStack)
 			if tc.upstream == 0 {
