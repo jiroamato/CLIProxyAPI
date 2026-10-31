@@ -509,8 +509,11 @@ func TestAdvertiserAndBrowser_Integration(t *testing.T) {
 	browser := NewZeroconfBrowser(ifaces...)
 	results, err := browser.Browse(browseCtx, DefaultServiceType, DefaultDomain)
 	if err != nil {
-		if strings.Contains(err.Error(), "failed to join any of these interfaces") {
-			t.Skipf("live multicast is unavailable on this host: %v", err)
+		// Some platforms (notably windows/amd64) cannot open mDNS sockets or
+		// join multicast interfaces; the live browse cannot run there.
+		if strings.Contains(err.Error(), "open mDNS sockets") ||
+			strings.Contains(err.Error(), "failed to join any of these interfaces") {
+			t.Skipf("skipping live multicast browse: %v", err)
 		}
 		t.Fatalf("browse failed: %v", err)
 	}
