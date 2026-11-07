@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -148,5 +149,57 @@ func TestDictationFramingAndRedaction(t *testing.T) {
 	var decoded map[string]any
 	if json.Unmarshal(event, &decoded) != nil || decoded["fatal"] != true {
 		t.Fatal("invalid sanitized error")
+	}
+}
+
+// Pins the audio.append validation contract. Payloads are long enough to
+// exercise the SIMD decoder path, not only the short-input fallback.
+func TestDictationAudioValidation(t *testing.T) {
+	prefix := strings.Repeat("AAAA", 16)
+	cases := []struct {
+		name   string
+		audio  string
+		accept bool
+	}{
+		{"empty", "", true},
+		{"exactly 1 MiB", base64.StdEncoding.EncodeToString(make([]byte, 1<<20)), true},
+		{"over 1 MiB", base64.StdEncoding.EncodeToString(make([]byte, 1<<20+2)), false},
+		{"odd PCM length", base64.StdEncoding.EncodeToString(make([]byte, 41)), false},
+		{"line breaks ignored", prefix + "\r\n" + prefix, true},
+		{"nonzero trailing bits", prefix + "AQACAB==", true},
+		{"invalid character", prefix + "AQACAA=!", false},
+		{"missing padding", prefix + "AQACAA=", false},
+		{"padding mid-stream", "AQ==" + prefix, false},
+		{"URL alphabet", prefix + "-_-_", false},
+	}
+	start := []byte(`{"type":"session.start","config":{"input_audio_format":"pcm16","sample_rate_hz":16000,"num_channels":1}}`)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			started, closing := false, false
+			if _, err := dictationInput(start, &started, &closing); err != nil {
+				t.Fatal(err)
+			}
+			payload, errMarshal := json.Marshal(map[string]string{"type": "audio.append", "audio": tc.audio})
+			if errMarshal != nil {
+				t.Fatal(errMarshal)
+			}
+			frame, err := dictationInput(payload, &started, &closing)
+			if !tc.accept {
+				if err == nil {
+					t.Fatal("invalid audio accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("valid audio rejected: %v", err)
+			}
+			var forwarded struct {
+				Type  string `json:"type"`
+				Audio string `json:"audio"`
+			}
+			if json.Unmarshal(frame, &forwarded) != nil || forwarded.Type != "audio.append" || forwarded.Audio != tc.audio {
+				t.Fatal("audio not forwarded unchanged")
+			}
+		})
 	}
 }

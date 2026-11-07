@@ -2,7 +2,6 @@ package live
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
