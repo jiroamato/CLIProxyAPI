@@ -345,6 +345,11 @@ func TestClaudeCloakedDateReminderProbeOverrideDoesNotReinitializeSessionDate(t 
 }
 
 func TestClaudeCloakedDateReminderPersistsAcrossRestartWithLocalBBoltKV(t *testing.T) {
+	// Create the temp dir before registering the shutdown cleanup. Cleanups run
+	// LIFO, so the store must close before TempDir removal, or Windows fails to
+	// delete the still-open kv.db.
+	dbPath := filepath.Join(t.TempDir(), "kv.db")
+
 	homekv.ClearCurrent()
 	_ = kvstore.ShutdownLocal()
 	helps.ResetClaudeDiagnosticsForTest()
@@ -354,7 +359,6 @@ func TestClaudeCloakedDateReminderPersistsAcrossRestartWithLocalBBoltKV(t *testi
 		helps.ResetClaudeDiagnosticsForTest()
 	})
 
-	dbPath := filepath.Join(t.TempDir(), "kv.db")
 	if errCfg := kvstore.ConfigureLocal(true, dbPath); errCfg != nil {
 		t.Fatalf("kvstore.ConfigureLocal(true, %q) error = %v", dbPath, errCfg)
 	}

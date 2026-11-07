@@ -127,6 +127,9 @@ func TestControllerPrioritizesHomeProviderOverLocalBoltStore(t *testing.T) {
 	if errCfg := ConfigureLocal(true, localPath); errCfg != nil {
 		t.Fatalf("ConfigureLocal(true, localPath) error = %v", errCfg)
 	}
+	// Close the store before TempDir cleanup runs (cleanups are LIFO); Windows
+	// cannot remove a database file that is still open.
+	t.Cleanup(func() { _ = ShutdownLocal() })
 
 	homeStorePath := filepath.Join(t.TempDir(), "home-mock.db")
 	homeStore, errOpen := OpenBoltStore(homeStorePath, WithSweepInterval(0))
@@ -179,6 +182,9 @@ func TestControllerHelpersWithLocalBoltStore(t *testing.T) {
 	if errCfg := ConfigureLocal(true, dbPath); errCfg != nil {
 		t.Fatalf("ConfigureLocal(true, dbPath) error = %v", errCfg)
 	}
+	// Close the store before TempDir cleanup runs (cleanups are LIFO); Windows
+	// cannot remove a database file that is still open.
+	t.Cleanup(func() { _ = ShutdownLocal() })
 
 	ctx := context.Background()
 	type payload struct {

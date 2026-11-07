@@ -123,6 +123,9 @@ func TestCurrentKVClientBridgesLocalBoltStoreAndPrioritizesHome(t *testing.T) {
 	if errCfg := kvstore.ConfigureLocal(true, dbPath); errCfg != nil {
 		t.Fatalf("kvstore.ConfigureLocal(true, %q) error = %v", dbPath, errCfg)
 	}
+	// Close the store before TempDir cleanup runs (cleanups are LIFO); Windows
+	// cannot remove a database file that is still open.
+	t.Cleanup(func() { _ = kvstore.ShutdownLocal() })
 
 	client, kvMode, errClient := CurrentKVClient()
 	if errClient != nil || !kvMode || client == nil {

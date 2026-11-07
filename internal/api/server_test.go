@@ -3927,7 +3927,16 @@ func TestServerResponsesWebsocketReauthorizesEachTurn(t *testing.T) {
 		registry.GetGlobalRegistry().UnregisterClient(authEntry.ID)
 	})
 
-	httpServer := httptest.NewServer(server.engine)
+	// The websocket handler can still write its request log after the client
+	// closes the socket. Wait for in-flight handlers before TempDir cleanup runs
+	// (cleanups are LIFO), or Windows fails to remove the log directory.
+	var inFlight sync.WaitGroup
+	t.Cleanup(inFlight.Wait)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inFlight.Add(1)
+		defer inFlight.Done()
+		server.engine.ServeHTTP(w, r)
+	}))
 	defer httpServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/v1/responses"
