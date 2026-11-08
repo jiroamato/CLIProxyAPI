@@ -59,4 +59,17 @@ In Settings, choose AI Models, Speech-to-Text, then Dictation:
 4. Set the model to `codex-transcribe`. Our OpenWhispr fork uses live dictation for this custom model, displays partial text while recording, and falls back to a file upload if streaming is unavailable.
 5. Dictionary entries can stay in OpenWhispr. Their speech hint is accepted but ignored by this route; a separately configured GPT cleanup model can apply dictionary corrections after transcription.
 
+### iPhone and other HTTPS-only clients
+
+The iOS app only accepts an `https://` endpoint, and the proxy serves plain HTTP on port 8317. A self-signed certificate on the proxy's own `server.tls` is rejected on iOS too. With the proxy host and the iPhone on the same Tailscale tailnet, and HTTPS certificates enabled for the tailnet in the Tailscale admin console, put Tailscale Serve in front of the proxy on its own HTTPS port:
+
+```sh
+tailscale serve status    # pick an HTTPS port that is not taken
+tailscale serve --bg --https=8446 http://127.0.0.1:8317
+```
+
+Then set the OpenWhispr endpoint on the iPhone to `https://<host>.<tailnet>.ts.net:8446/v1`. The rest of the setup is the same as above. The mapping is tailnet only and persists across reboots and Tailscale updates. Without a key, `/v1/models` on that URL returns 401, which confirms that the route and certificate work.
+
+Always pass `--https=<port>`. `tailscale serve --bg 8317` serves on port 443 and silently replaces whatever was there, for example a T3 Code server, whose clients then can no longer connect to that machine.
+
 Meetings and audio uploads have separate engine settings. Configure them independently if needed. The standard `/v1/models` catalog advertises `codex-transcribe` when a non-disabled Codex OAuth login is registered, so OpenWhispr's connection test can validate it. The specialized Codex coding-model catalog remains separate.
