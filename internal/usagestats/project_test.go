@@ -154,6 +154,14 @@ func TestExtractWorkingDirFromCodexEnvironmentContext(t *testing.T) {
 	if got := ExtractWorkingDir(quoted); got != "" {
 		t.Errorf("quoted tag: ExtractWorkingDir = %q, want empty", got)
 	}
+
+	// So is a whole environment context quoted inside a question.
+	asked := mustJSON(t, map[string]any{
+		"input": []map[string]any{{"role": "user", "content": "explain this: " + environment}},
+	})
+	if got := ExtractWorkingDir(asked); got != "" {
+		t.Errorf("quoted block: ExtractWorkingDir = %q, want empty", got)
+	}
 }
 
 func TestExtractWorkingDirHandlesUnusablePayloads(t *testing.T) {

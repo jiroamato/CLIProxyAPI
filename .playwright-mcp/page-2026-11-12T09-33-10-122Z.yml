@@ -1,0 +1,9 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]: CLI
+    - generic [ref=e7]: PROXY
+    - generic [ref=e8]: API
+  - generic [ref=e10]:
+    - img "CPAMC" [ref=e11]
+    - heading "CLI Proxy API" [level=1] [ref=e12]
+    - paragraph [ref=e13]: Management Center

@@ -340,6 +340,20 @@ func (s *Store) Speed(ctx context.Context, q Query, dimension string) ([]Speed, 
 		}
 		result = append(result, speed)
 	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = DefaultGroupLimit
+	}
+	if len(result) > limit {
+		// Keep the groups with the most requests, as Aggregate keeps the largest.
+		sort.Slice(result, func(i, j int) bool {
+			if result[i].Requests != result[j].Requests {
+				return result[i].Requests > result[j].Requests
+			}
+			return result[i].Value < result[j].Value
+		})
+		result = result[:limit]
+	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Value < result[j].Value })
 	return result, nil
 }

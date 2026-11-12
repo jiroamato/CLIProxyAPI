@@ -22,6 +22,9 @@ const authTypeOAuth = "oauth"
 var (
 	current     atomic.Pointer[Store]
 	configureMu sync.Mutex
+	// recordMu is held for reading while a record is written, so a store is
+	// never closed underneath an insert.
+	recordMu sync.RWMutex
 )
 
 func init() {
@@ -38,21 +41,29 @@ func Configure(enabled bool, path string) error {
 	if enabled && existing != nil && existing.Path() == path {
 		return nil
 	}
+	var replacement *Store
+	if enabled {
+		// Open the replacement first: when it cannot be opened, recording
+		// carries on in the store that already works.
+		store, errOpen := Open(path)
+		if errOpen != nil {
+			return errOpen
+		}
+		replacement = store
+	}
+	current.Store(replacement)
 	if existing != nil {
-		current.Store(nil)
-		if errClose := existing.Close(); errClose != nil {
+		// Wait for writes that already hold the retired store.
+		recordMu.Lock()
+		errClose := existing.Close()
+		recordMu.Unlock()
+		if errClose != nil {
 			log.Warnf("usage statistics: close store: %v", errClose)
 		}
 	}
-	if !enabled {
-		return nil
+	if replacement != nil {
+		log.Infof("usage statistics: recording to %s", path)
 	}
-	store, errOpen := Open(path)
-	if errOpen != nil {
-		return errOpen
-	}
-	current.Store(store)
-	log.Infof("usage statistics: recording to %s", path)
 	return nil
 }
 
@@ -75,6 +86,8 @@ func Enabled() bool {
 type recorder struct{}
 
 func (recorder) HandleUsage(ctx context.Context, record coreusage.Record) {
+	recordMu.RLock()
+	defer recordMu.RUnlock()
 	store := current.Load()
 	if store == nil {
 		return
@@ -84,7 +97,7 @@ func (recorder) HandleUsage(ctx context.Context, record coreusage.Record) {
 	// published, so storage runs on its own context.
 	storeCtx := context.Background()
 	if row.WorkingDir == "" && row.SessionID != "" {
-		dir, errLookup := store.WorkingDirForSession(storeCtx, row.SessionID)
+		dir, errLookup := store.WorkingDirForSession(storeCtx, row.SessionID, row.ClientKey)
 		if errLookup != nil {
 			log.Warnf("usage statistics: %v", errLookup)
 		}
@@ -110,6 +123,9 @@ func rowFromRecord(ctx context.Context, record coreusage.Record) Row {
 		failed = internallogging.GetResponseStatus(ctx) >= http.StatusBadRequest
 	}
 	statusCode := http.StatusOK
+	if status := internallogging.GetResponseStatus(ctx); !failed && status >= http.StatusOK {
+		statusCode = status
+	}
 	if failed {
 		statusCode = record.Fail.StatusCode
 		if statusCode <= 0 {
@@ -131,9 +147,12 @@ func rowFromRecord(ctx context.Context, record coreusage.Record) Row {
 	}
 
 	authType := strings.TrimSpace(record.AuthType)
+	clientKey := strings.TrimSpace(record.APIKey)
 	account := strings.TrimSpace(record.Source)
-	if !strings.EqualFold(authType, authTypeOAuth) {
-		// For key-based credentials the source is the upstream API key itself.
+	// For key-based credentials the source is the upstream API key itself, and
+	// an OAuth credential without an account identity falls back to the client
+	// key. Only a real account identity is stored unmasked.
+	if !strings.EqualFold(authType, authTypeOAuth) || account == clientKey {
 		account = util.HideAPIKey(account)
 	}
 
@@ -154,7 +173,7 @@ func rowFromRecord(ctx context.Context, record coreusage.Record) Row {
 		AuthIndex:       strings.TrimSpace(record.AuthIndex),
 		AuthType:        authType,
 		Account:         account,
-		ClientKey:       util.HideAPIKey(strings.TrimSpace(record.APIKey)),
+		ClientKey:       util.HideAPIKey(clientKey),
 		ClientIP:        clientIP,
 		UserAgent:       strings.TrimSpace(meta.UserAgent),
 		WorkingDir:      strings.TrimSpace(meta.WorkingDir),

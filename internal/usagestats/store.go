@@ -149,6 +149,9 @@ func Open(path string) (*Store, error) {
 	if errMkdir := os.MkdirAll(filepath.Dir(path), 0o700); errMkdir != nil {
 		return nil, fmt.Errorf("usagestats: create database directory: %w", errMkdir)
 	}
+	if errRestrict := restrictToOwner(path); errRestrict != nil {
+		return nil, errRestrict
+	}
 
 	// WAL keeps dashboard reads from blocking the writer; NORMAL is durable
 	// across process crashes, which is the failure mode that matters here.
@@ -170,6 +173,23 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("usagestats: prepare insert: %w", errPrepare)
 	}
 	return &Store{db: db, insert: insert, path: path}, nil
+}
+
+// restrictToOwner makes the database file readable by its owner only, creating
+// it when needed. SQLite gives its WAL and shared-memory files the same mode.
+// The auth directory may predate this store and be readable by other users.
+func restrictToOwner(path string) error {
+	file, errOpen := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if errOpen != nil {
+		return fmt.Errorf("usagestats: create database file: %w", errOpen)
+	}
+	if errClose := file.Close(); errClose != nil {
+		return fmt.Errorf("usagestats: create database file: %w", errClose)
+	}
+	if errChmod := os.Chmod(path, 0o600); errChmod != nil {
+		return fmt.Errorf("usagestats: restrict database file: %w", errChmod)
+	}
+	return nil
 }
 
 // migrate brings the schema up to date, one transaction per migration.
@@ -202,14 +222,16 @@ func migrate(db *sql.DB) error {
 // WorkingDirForSession returns the most recent working directory recorded for
 // a session, or "" when none is known. Agents that only declare their working
 // directory on the first request of a session rely on this for later requests.
-func (s *Store) WorkingDirForSession(ctx context.Context, sessionID string) (string, error) {
+// Session ids can be chosen by clients, so the lookup is scoped to the stored
+// (masked) client key: one client never inherits another's directory.
+func (s *Store) WorkingDirForSession(ctx context.Context, sessionID, clientKey string) (string, error) {
 	if s == nil || sessionID == "" {
 		return "", nil
 	}
 	var dir string
 	errScan := s.db.QueryRowContext(ctx,
-		"SELECT working_dir FROM requests WHERE session_id = ? AND working_dir != '' ORDER BY id DESC LIMIT 1",
-		sessionID,
+		"SELECT working_dir FROM requests WHERE session_id = ? AND client_key = ? AND working_dir != '' ORDER BY id DESC LIMIT 1",
+		sessionID, clientKey,
 	).Scan(&dir)
 	if errors.Is(errScan, sql.ErrNoRows) {
 		return "", nil

@@ -403,6 +403,13 @@ func (s *Service) Shutdown(ctx context.Context) error {
 
 		helps.RetireProxyPoolPublisher(s.proxyPoolPublisher)
 		usage.StopDefault()
+		// Requests that just finished are still queued; let them reach the
+		// store before it closes, without letting a stuck plugin hold up exit.
+		drainCtx, cancelDrain := context.WithTimeout(ctx, usageDrainTimeout)
+		if !usage.WaitDefault(drainCtx) {
+			log.Warn("usage dispatcher did not drain before shutdown; recent usage records may be lost")
+		}
+		cancelDrain()
 		if errShutdownUsage := usagestats.Shutdown(); errShutdownUsage != nil {
 			log.Errorf("failed to stop usage statistics store: %v", errShutdownUsage)
 		}

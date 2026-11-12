@@ -136,8 +136,10 @@ func codexWorkingDir(input ojson.Result) string {
 	return found
 }
 
+// workingDirFromCwdTag reads <cwd> from text that is an environment context
+// block. Text that only quotes such a block is conversation content.
 func workingDirFromCwdTag(text string) string {
-	if !strings.Contains(text, "<environment_context>") {
+	if !strings.HasPrefix(strings.TrimSpace(text), "<environment_context>") {
 		return ""
 	}
 	start := strings.Index(text, "<cwd>")

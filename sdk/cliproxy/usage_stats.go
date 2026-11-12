@@ -2,12 +2,17 @@ package cliproxy
 
 import (
 	"path/filepath"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/usagestats"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	log "github.com/sirupsen/logrus"
 )
+
+// usageDrainTimeout bounds how long shutdown waits for queued usage records to
+// reach their plugins. Draining normally takes milliseconds.
+const usageDrainTimeout = 5 * time.Second
 
 // applyUsageStatsConfig opens or closes the persistent usage statistics store
 // to match usage-statistics-enabled. The database lives next to the

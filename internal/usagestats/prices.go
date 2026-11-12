@@ -136,10 +136,18 @@ func (p Price) cost(input, cacheRead, cacheWrite, cacheWrite1h, output int64) fl
 
 // Validate reports whether the settings are well formed.
 func (s Settings) Validate() error {
+	seen := make(map[string]string, len(s.ModelPrices))
 	for model, price := range s.ModelPrices {
-		if normalizeModel(model) == "" {
+		normalized := normalizeModel(model)
+		if normalized == "" {
 			return errors.New("model price has an empty model name")
 		}
+		// Names match case-insensitively, so two spellings of one model would
+		// make its price depend on map order.
+		if other, duplicate := seen[normalized]; duplicate {
+			return fmt.Errorf("models %q and %q are the same model", min(model, other), max(model, other))
+		}
+		seen[normalized] = model
 		for _, value := range []*float64{&price.Input, &price.Output, price.CacheRead, price.CacheWrite5m, price.CacheWrite1h} {
 			if value != nil && !validAmount(*value) {
 				return fmt.Errorf("model %q has an invalid price", model)

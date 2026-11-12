@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -464,4 +465,97 @@ func TestConfigureIsIdempotentAndDisables(t *testing.T) {
 	}
 	// Recording while disabled must be a no-op, not a panic.
 	recorder{}.HandleUsage(context.Background(), coreusage.Record{Model: "m"})
+}
+
+func TestConfigureKeepsTheWorkingStoreWhenTheReplacementCannotOpen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DefaultFileName)
+	if errConfigure := Configure(true, path); errConfigure != nil {
+		t.Fatalf("configure: %v", errConfigure)
+	}
+	t.Cleanup(func() {
+		if errShutdown := Shutdown(); errShutdown != nil {
+			t.Errorf("shutdown: %v", errShutdown)
+		}
+	})
+	working := Current()
+
+	// A regular file where the database directory should be cannot be opened.
+	blocker := filepath.Join(dir, "blocker")
+	if errWrite := os.WriteFile(blocker, nil, 0o600); errWrite != nil {
+		t.Fatalf("write blocker: %v", errWrite)
+	}
+	if errConfigure := Configure(true, filepath.Join(blocker, DefaultFileName)); errConfigure == nil {
+		t.Fatal("configure with an unusable path succeeded")
+	}
+	if Current() != working {
+		t.Fatal("the working store was retired although its replacement failed to open")
+	}
+	recorder{}.HandleUsage(context.Background(), coreusage.Record{Model: "m", RequestedAt: testDay})
+	aggregate, errAggregate := working.Aggregate(context.Background(), Query{From: testDay, To: testDay.Add(time.Hour)})
+	if errAggregate != nil || len(aggregate.Groups) != 1 {
+		t.Fatalf("aggregate = %+v, %v; want the record in the working store", aggregate, errAggregate)
+	}
+}
+
+// An OAuth credential without an account identity reports the client key as
+// its source, which must not be stored in full.
+func TestRecorderMasksAClientKeyReportedAsTheOAuthSource(t *testing.T) {
+	row := rowFromRecord(context.Background(), coreusage.Record{
+		AuthType: "oauth",
+		Source:   "sk-client-secret-key",
+		APIKey:   "sk-client-secret-key",
+	})
+	if row.Account != "sk-c...-key" || row.ClientKey != "sk-c...-key" {
+		t.Fatalf("account = %q, client key = %q; want both masked", row.Account, row.ClientKey)
+	}
+}
+
+func TestRecorderKeepsTheSuccessfulResponseStatus(t *testing.T) {
+	ctx := internallogging.WithResponseStatusHolder(context.Background())
+	internallogging.SetResponseStatus(ctx, 201)
+	if got := rowFromRecord(ctx, coreusage.Record{}).StatusCode; got != 201 {
+		t.Errorf("status code = %d, want 201", got)
+	}
+	if got := rowFromRecord(context.Background(), coreusage.Record{}).StatusCode; got != 200 {
+		t.Errorf("status code = %d, want 200 when no status was captured", got)
+	}
+}
+
+func TestWorkingDirForSessionIsScopedToTheClientKey(t *testing.T) {
+	store := openTestStore(t)
+	mustInsert(t, store, Row{Timestamp: testDay, SessionID: "shared", ClientKey: "sk-a...aaaa", WorkingDir: "/home/a/repo"})
+
+	own, errOwn := store.WorkingDirForSession(context.Background(), "shared", "sk-a...aaaa")
+	if errOwn != nil || own != "/home/a/repo" {
+		t.Fatalf("own lookup = %q, %v", own, errOwn)
+	}
+	other, errOther := store.WorkingDirForSession(context.Background(), "shared", "sk-b...bbbb")
+	if errOther != nil || other != "" {
+		t.Fatalf("another client's lookup = %q, %v; want nothing", other, errOther)
+	}
+}
+
+func TestSpeedKeepsTheBusiestGroupsWithinTheLimit(t *testing.T) {
+	store := openTestStore(t)
+	for model, requests := range map[string]int{"busy": 3, "busier": 5, "quiet": 1} {
+		for range requests {
+			mustInsert(t, store, Row{Timestamp: testDay, Model: model, LatencyMs: 100})
+		}
+	}
+	speeds, errSpeed := store.Speed(context.Background(), Query{From: testDay, To: testDay.Add(time.Hour), Limit: 2}, "model")
+	if errSpeed != nil {
+		t.Fatalf("speed: %v", errSpeed)
+	}
+	if len(speeds) != 2 || speeds[0].Value != "busier" || speeds[1].Value != "busy" {
+		t.Fatalf("speeds = %+v, want busier and busy", speeds)
+	}
+}
+
+func TestSaveSettingsRejectsTwoSpellingsOfOneModel(t *testing.T) {
+	store := openTestStore(t)
+	settings := Settings{ModelPrices: map[string]Price{"GPT-5": {Input: 1}, "gpt-5": {Input: 2}}}
+	if errSave := store.SaveSettings(context.Background(), settings); errSave == nil {
+		t.Fatal("save succeeded, want a duplicate model error")
+	}
 }

@@ -35,8 +35,9 @@ Rows go to a SQLite database at `<auth-dir>/usage.db`. Each row holds:
 
 No prompt or response content is stored, and no full API key.
 
-Rows are kept until you delete them. To start over, stop the server and delete
-`usage.db` together with its `-wal` and `-shm` files.
+Rows are kept until you delete them, also after recording is turned off. To
+start over, stop the server and delete `usage.db` together with its `-wal` and
+`-shm` files. The database file is readable by its owner only.
 
 ## Projects
 
@@ -56,7 +57,7 @@ Agent worktrees are folded into their repository:
 | `~/.codex/worktrees/1a2b/app` | `app` |
 
 A request that declares no working directory inherits the one last seen in its
-session, and is otherwise listed as unknown.
+session for the same client key, and is otherwise listed as unknown.
 
 ## Cost
 
