@@ -9,22 +9,25 @@ import (
 const (
 	// maxWorkingDirLength bounds the stored working directory.
 	maxWorkingDirLength = 512
-	// codexContextScanItems bounds how many leading input items are inspected.
-	// Codex emits its environment context at the start of the conversation, and
-	// scanning a long history on every request would be wasted work.
-	codexContextScanItems = 8
+	// contextScanItems bounds how many leading conversation items are inspected.
+	// Agents state their environment at the start of the conversation, and
+	// scanning a long history on every request would be wasted work. A later
+	// request that misses it inherits the working directory of its session.
+	contextScanItems = 8
 )
 
-// claudeWorkingDirMarkers are the system prompt line prefixes Claude Code uses
-// to announce its working directory, newest first.
+// claudeWorkingDirMarkers are the line prefixes Claude Code uses to announce
+// its working directory, newest first.
 var claudeWorkingDirMarkers = []string{"Primary working directory: ", "Working directory: "}
 
 // ExtractWorkingDir returns the working directory a coding agent declared in
 // its request payload, or "" when the payload declares none.
 //
-// It only reads the fields where agents state their environment (the Anthropic
-// "system" prompt and the Responses "input" messages), so a path that merely
-// appears in conversation content is never mistaken for the working directory.
+// It only reads the places where agents state their environment: the
+// Anthropic "system" prompt, system-role messages (where current Claude Code
+// puts its environment block), and the Codex environment context in the
+// Responses "input". A path that merely appears in user or assistant content is
+// never mistaken for the working directory.
 func ExtractWorkingDir(payload []byte) string {
 	if len(payload) == 0 {
 		return ""
@@ -34,44 +37,74 @@ func ExtractWorkingDir(payload []byte) string {
 	if dir := claudeWorkingDir(ojson.GetBytesNoCopy(payload, "system")); dir != "" {
 		return dir
 	}
+	if dir := claudeSystemMessageWorkingDir(ojson.GetBytesNoCopy(payload, "messages")); dir != "" {
+		return dir
+	}
 	return codexWorkingDir(ojson.GetBytesNoCopy(payload, "input"))
 }
 
-// claudeWorkingDir reads the working directory from an Anthropic system prompt,
+// claudeWorkingDir reads the working directory from Anthropic prompt content,
 // which is either a string or an array of text blocks.
-func claudeWorkingDir(system ojson.Result) string {
-	if !system.Exists() {
+func claudeWorkingDir(content ojson.Result) string {
+	if !content.Exists() {
 		return ""
 	}
-	if !system.IsArray() {
-		return workingDirFromLine(system.String())
+	if !content.IsArray() {
+		return workingDirFromLine(content.String())
 	}
 	found := ""
-	system.ForEach(func(_, block ojson.Result) bool {
+	content.ForEach(func(_, block ojson.Result) bool {
 		found = workingDirFromLine(block.Get("text").String())
 		return found == ""
 	})
 	return found
 }
 
+// claudeSystemMessageWorkingDir reads the working directory from system-role
+// messages near the start of an Anthropic conversation.
+func claudeSystemMessageWorkingDir(messages ojson.Result) string {
+	if !messages.IsArray() {
+		return ""
+	}
+	found := ""
+	scanned := 0
+	messages.ForEach(func(_, message ojson.Result) bool {
+		if scanned++; scanned > contextScanItems {
+			return false
+		}
+		if message.Get("role").String() == "system" {
+			found = claudeWorkingDir(message.Get("content"))
+		}
+		return found == ""
+	})
+	return found
+}
+
+// workingDirFromLine returns the directory from the first line of text that
+// starts with a working directory marker.
 func workingDirFromLine(text string) string {
 	for _, marker := range claudeWorkingDirMarkers {
-		start := strings.Index(text, marker)
-		if start < 0 {
-			continue
-		}
-		// Require the marker to start a line (optionally as a "- " list item) so
-		// "Primary working directory: " is not also matched as "Working directory: ".
-		prefix := strings.TrimRight(text[:start], " \t-")
-		if prefix != "" && !strings.HasSuffix(prefix, "\n") {
-			continue
-		}
-		rest := text[start+len(marker):]
-		if end := strings.IndexAny(rest, "\r\n"); end >= 0 {
-			rest = rest[:end]
-		}
-		if dir := cleanWorkingDir(rest); dir != "" {
-			return dir
+		for offset := 0; offset < len(text); {
+			index := strings.Index(text[offset:], marker)
+			if index < 0 {
+				break
+			}
+			start := offset + index
+			offset = start + len(marker)
+			// The marker must start a line (optionally as a "- " list item), so a
+			// mention inside a sentence is skipped, and "Primary working
+			// directory: " is not also matched as "Working directory: ".
+			prefix := strings.TrimRight(text[:start], " \t-")
+			if prefix != "" && !strings.HasSuffix(prefix, "\n") {
+				continue
+			}
+			rest := text[offset:]
+			if end := strings.IndexAny(rest, "\r\n"); end >= 0 {
+				rest = rest[:end]
+			}
+			if dir := cleanWorkingDir(rest); dir != "" {
+				return dir
+			}
 		}
 	}
 	return ""
@@ -86,7 +119,7 @@ func codexWorkingDir(input ojson.Result) string {
 	found := ""
 	scanned := 0
 	input.ForEach(func(_, item ojson.Result) bool {
-		if scanned++; scanned > codexContextScanItems {
+		if scanned++; scanned > contextScanItems {
 			return false
 		}
 		content := item.Get("content")

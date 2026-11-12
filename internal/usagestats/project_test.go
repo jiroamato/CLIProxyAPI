@@ -57,6 +57,63 @@ func TestExtractWorkingDirFromClaudeSystemPrompt(t *testing.T) {
 	}
 }
 
+// Claude Code 2.1 sends its environment block as a system-role message after
+// the first user message, not in the top-level system prompt.
+func TestExtractWorkingDirFromClaudeSystemRoleMessage(t *testing.T) {
+	const dir = `C:\Users\me\.t3\worktrees\app\t3-1234`
+	environment := "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: " +
+		dir + "\n - Is a git repository: true\n - Additional working directories:\n  - C:\\Users\\me\\other\n"
+	payload := mustJSON(t, map[string]any{
+		"model": "claude-opus-5-5",
+		"system": []map[string]string{
+			{"type": "text", "text": "x-anthropic-billing-header: cc_version=2.1.322;"},
+			{"type": "text", "text": "You are a Claude agent."},
+		},
+		"messages": []map[string]any{
+			{"role": "user", "content": []map[string]string{
+				{"type": "text", "text": "<system-reminder>Primary working directory: /decoy/in/user/content</system-reminder>"},
+				{"type": "text", "text": "say ok"},
+			}},
+			{"role": "system", "content": []map[string]any{
+				{"type": "text", "text": environment, "cache_control": map[string]string{"type": "ephemeral"}},
+			}},
+		},
+	})
+	if got := ExtractWorkingDir(payload); got != dir {
+		t.Fatalf("ExtractWorkingDir = %q, want %q", got, dir)
+	}
+
+	// A system-role message with string content works too.
+	plain := mustJSON(t, map[string]any{
+		"messages": []map[string]any{
+			{"role": "user", "content": "hi"},
+			{"role": "system", "content": "Primary working directory: /home/me/repos/app\n"},
+		},
+	})
+	if got := ExtractWorkingDir(plain); got != "/home/me/repos/app" {
+		t.Fatalf("string content: ExtractWorkingDir = %q", got)
+	}
+}
+
+func TestExtractWorkingDirOnlyScansTheStartOfTheConversation(t *testing.T) {
+	messages := make([]map[string]any, 0, contextScanItems+1)
+	for range contextScanItems {
+		messages = append(messages, map[string]any{"role": "user", "content": "filler"})
+	}
+	messages = append(messages, map[string]any{"role": "system", "content": "Primary working directory: /too/late\n"})
+	if got := ExtractWorkingDir(mustJSON(t, map[string]any{"messages": messages})); got != "" {
+		t.Fatalf("ExtractWorkingDir = %q, want empty beyond the scan window", got)
+	}
+}
+
+func TestExtractWorkingDirSkipsMentionsBeforeTheRealLine(t *testing.T) {
+	system := "Paths are relative to the Primary working directory: keep that in mind.\n" +
+		" - Primary working directory: /home/me/repos/app\n"
+	if got := ExtractWorkingDir(mustJSON(t, map[string]any{"system": system})); got != "/home/me/repos/app" {
+		t.Fatalf("ExtractWorkingDir = %q, want the line-start occurrence", got)
+	}
+}
+
 func TestExtractWorkingDirIgnoresConversationContent(t *testing.T) {
 	// A path quoted in the conversation is not the agent's environment.
 	payload := mustJSON(t, map[string]any{

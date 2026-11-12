@@ -41,8 +41,10 @@ Rows are kept until you delete them. To start over, stop the server and delete
 ## Projects
 
 The proxy never sees a repository name. Coding agents state their working
-directory in each request (Claude Code in its system prompt, Codex in its
-environment context), and the project is the last directory of that path.
+directory in each request (Claude Code in a system message or its system
+prompt, Codex in its environment context), and the project is the last
+directory of that path. Only those places are read, never user or assistant
+content, and only near the start of the conversation.
 Agent worktrees are folded into their repository:
 
 | Working directory | Project |
