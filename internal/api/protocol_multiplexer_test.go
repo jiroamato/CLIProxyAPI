@@ -316,7 +316,11 @@ func TestServerRejectsIncompleteUnauthenticatedRequestBodiesPromptly(t *testing.
 						_ = conn.Close()
 					}()
 
-					if errDeadline := conn.SetDeadline(time.Now().Add(5 * time.Second)); errDeadline != nil {
+					// The server writes its request log before responding. Under heavy
+					// parallel test I/O, Windows can stall opening the request body temp
+					// file for several seconds, so allow a generous bound; a server that
+					// never closes the connection still fails.
+					if errDeadline := conn.SetDeadline(time.Now().Add(15 * time.Second)); errDeadline != nil {
 						t.Fatalf("set deadline: %v", errDeadline)
 					}
 					if _, errWrite := conn.Write([]byte(tc.rawRequest)); errWrite != nil {
