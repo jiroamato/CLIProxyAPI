@@ -13,6 +13,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usagestats"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -82,6 +83,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 		s.applyKVStoreConfig(cfg)
 	}
+	s.applyUsageStatsConfig(cfg)
 
 	s.applyRetryConfig(cfg)
 	s.configureCooldownStateStore(cfg)
@@ -401,6 +403,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 
 		helps.RetireProxyPoolPublisher(s.proxyPoolPublisher)
 		usage.StopDefault()
+		if errShutdownUsage := usagestats.Shutdown(); errShutdownUsage != nil {
+			log.Errorf("failed to stop usage statistics store: %v", errShutdownUsage)
+		}
 	})
 	return shutdownErr
 }

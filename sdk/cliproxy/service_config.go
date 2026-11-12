@@ -221,6 +221,7 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
 	if s.kvStoreManaged.Load() {
 		s.applyKVStoreConfig(cfg)
 	}
+	s.applyUsageStatsConfig(cfg)
 	if errContext := ctx.Err(); errContext != nil {
 		return false
 	}

@@ -23,6 +23,9 @@ type ClientRequestMetadata struct {
 	NodeKind         string
 	IsFork           bool
 	IsCompaction     bool
+	// WorkingDir is the working directory the calling agent declared in its
+	// request, when usage statistics are recording. Empty when unknown.
+	WorkingDir string
 }
 
 type responseStatusHolder struct {

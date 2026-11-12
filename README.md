@@ -247,7 +247,9 @@ see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 
 ## Usage Statistics
 
-Since v6.10.0, CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) no longer ship built-in usage statistics. If you need usage statistics, use:
+This fork records usage in a local database and shows it on the management panel's Usage page: tokens and API-equivalent cost per day, value per subscription, and breakdowns by project and model. See [docs/usage-statistics.md](docs/usage-statistics.md).
+
+Upstream CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) have not shipped built-in usage statistics since v6.10.0. These external tools remain an alternative:
 
 ### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 
