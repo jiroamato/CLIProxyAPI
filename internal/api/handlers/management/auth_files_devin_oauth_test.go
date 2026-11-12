@@ -122,11 +122,11 @@ func TestDevinRemoteOAuthFlow(t *testing.T) {
 		if base64.RawURLEncoding.EncodeToString(digest[:]) != query.Get("code_challenge") {
 			t.Fatal("PKCE challenge does not match verifier")
 		}
-	case <-time.After(15 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("token exchange did not start")
 	}
 
-	deadline := time.NewTimer(15 * time.Second)
+	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
