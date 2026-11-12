@@ -990,7 +990,14 @@ func TestHandleEventConfigChangeSchedulesReload(t *testing.T) {
 
 	w.handleEvent(fsnotify.Event{Name: configPath, Op: fsnotify.Write})
 
-	time.Sleep(400 * time.Millisecond)
+	// Wait for the debounced reload instead of sleeping a fixed interval; a
+	// loaded host can fire the debounce timer late. Waiting for the callback
+	// also guarantees the reload has stopped reading config.yaml before
+	// TempDir cleanup runs, which Windows requires.
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadInt32(&reloads) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if atomic.LoadInt32(&reloads) != 1 {
 		t.Fatalf("expected config change to trigger reload once, got %d", reloads)
 	}
