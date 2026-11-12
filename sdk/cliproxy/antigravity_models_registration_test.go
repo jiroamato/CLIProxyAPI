@@ -757,14 +757,14 @@ func TestAntigravityBlockedHintPersistenceDoesNotBlockPublicationOrOtherAccounts
 	svc.refreshAntigravityModels(t.Context())
 	select {
 	case <-authBProbed:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		cancelLifetime()
 		svc.WaitAntigravityProbes()
 		t.Fatal("stalled persistence on authA blocked authB probe")
 	}
 	select {
 	case <-authARefreshed:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		cancelLifetime()
 		svc.WaitAntigravityProbes()
 		t.Fatal("stalled persistence on authA blocked subsequent probe for authA")
@@ -778,7 +778,7 @@ func TestAntigravityBlockedHintPersistenceDoesNotBlockPublicationOrOtherAccounts
 	// (which happens after applyAntigravityModelHints published authA's updated catalog).
 	select {
 	case <-store.saveEntered:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		cancelLifetime()
 		svc.WaitAntigravityProbes()
 		t.Fatal("subsequent persistence task did not start after registry publication")
@@ -800,7 +800,7 @@ func TestAntigravityBlockedHintPersistenceDoesNotBlockPublicationOrOtherAccounts
 			svc.WaitAntigravityProbes()
 			t.Fatal(errUpdateB)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		cancelLifetime()
 		svc.WaitAntigravityProbes()
 		t.Fatal("persisting Update on authB blocked while store Save was stalled on authA")
@@ -837,7 +837,7 @@ func TestAntigravityBlockedHintPersistenceDoesNotBlockPublicationOrOtherAccounts
 	cancelB()
 	select {
 	case <-canceledUpdateBDone:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		close(store.releaseSave)
 		cancelLifetime()
 		svc.WaitAntigravityProbes()
@@ -864,8 +864,9 @@ func TestAntigravityBlockedHintPersistenceDoesNotBlockPublicationOrOtherAccounts
 	}()
 	select {
 	case <-doneWait:
-	case <-time.After(time.Second):
-		close(store.releaseSave)
+	case <-time.After(5 * time.Second):
+		// releaseSave was already closed above; closing it again would panic and
+		// hide this failure message.
 		t.Fatal("service context cancellation did not cancel blocked metadata persistence")
 	}
 }

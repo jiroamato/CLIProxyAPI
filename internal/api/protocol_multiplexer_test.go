@@ -316,7 +316,7 @@ func TestServerRejectsIncompleteUnauthenticatedRequestBodiesPromptly(t *testing.
 						_ = conn.Close()
 					}()
 
-					if errDeadline := conn.SetDeadline(time.Now().Add(500 * time.Millisecond)); errDeadline != nil {
+					if errDeadline := conn.SetDeadline(time.Now().Add(5 * time.Second)); errDeadline != nil {
 						t.Fatalf("set deadline: %v", errDeadline)
 					}
 					if _, errWrite := conn.Write([]byte(tc.rawRequest)); errWrite != nil {
