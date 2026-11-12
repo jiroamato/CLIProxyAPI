@@ -20,6 +20,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/usagestats"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -360,6 +361,12 @@ func extractSessionIDsFromRequest(request *http.Request) (string, string) {
 // from headers, payload, and metadata and records them in ClientRequestMetadata.
 func EnrichContextWithSessionHierarchy(ctx context.Context, headers http.Header, payload []byte, metadata map[string]any) context.Context {
 	meta := logging.GetClientRequestMetadata(ctx)
+	if meta.WorkingDir == "" && usagestats.Enabled() {
+		if dir := usagestats.ExtractWorkingDir(payload); dir != "" {
+			meta.WorkingDir = dir
+			ctx = logging.WithClientRequestMetadata(ctx, meta)
+		}
+	}
 	if info, ok := coresession.ExtractSessionInfo(headers, payload, metadata); ok {
 		meta.SessionID = info.SessionID
 		meta.ParentSessionID = info.ParentSessionID

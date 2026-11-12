@@ -32,6 +32,7 @@ auths/*
 docs/*
 !docs/management-api-v8.md
 !docs/audio-transcription.md
+!docs/usage-statistics.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
