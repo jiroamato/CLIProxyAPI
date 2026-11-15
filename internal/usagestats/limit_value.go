@@ -210,8 +210,10 @@ func limitValueOf(series *QuotaSeries, requests []completedRequest, prices *Pric
 			sum.cacheWrite1h += request.cacheWrite1h
 		}
 		percent := end.UsedPercent - start.UsedPercent
-		// A drop is a window reset or a redeemed reset grant, not usage.
-		if percent <= 0 {
+		// A drop is a window reset or a redeemed reset grant, not usage. A rise
+		// across a reset is not usage of one window either: usage the proxy did
+		// not see can lift the new window above where the old one ended.
+		if percent <= 0 || spansReset(start, end) {
 			continue
 		}
 		var interval Metrics
@@ -243,6 +245,16 @@ func limitValueOf(series *QuotaSeries, requests []completedRequest, prices *Pric
 	}
 	slices.SortFunc(value.Models, func(a, b ModelLimitSpend) int { return strings.Compare(a.Model, b.Model) })
 	return value
+}
+
+// spansReset reports whether two samples of a window report different resets.
+// A sample with no reset time does not mark one.
+func spansReset(start, end QuotaPoint) bool {
+	if start.ResetsAtMs == 0 || end.ResetsAtMs == 0 {
+		return false
+	}
+	shift := end.ResetsAtMs - start.ResetsAtMs
+	return max(shift, -shift) >= quotaResetTolerance.Milliseconds()
 }
 
 func (l *LimitSpend) add(percent float64, interval Metrics) {

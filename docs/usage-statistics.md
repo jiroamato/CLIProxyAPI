@@ -272,7 +272,9 @@ How the numbers are built:
   range holds the intervals whose later sample is in `[from, to)`, so the
   first interval can start at the `carry_in` sample before `from`.
 - Only intervals in which `used_percent` rose count. A drop is a window reset
-  or a redeemed reset grant, and the requests in it are left out.
+  or a redeemed reset grant, and the requests in it are left out. So is an
+  interval whose two samples report resets more than a minute apart, even
+  when the percent rose: its samples belong to two windows.
 - A request belongs to the interval that contains its completion time,
   `ts_ms + latency_ms`, counting the interval's later sample as inside it.
   Requests join a series by `auth_index`, and a request can have started
@@ -309,9 +311,11 @@ real account:
 
 - **Quantization.** Claude reports utilization to 1% and Codex reports whole
   percents. Within a run of rising intervals the rounding cancels out, and
-  what is left is about one request at each end of the run. The error is
-  about the percent one request uses divided by `percent_used`, so a figure
-  over 20% of evidence is good to a few percent and a figure over 2% is not.
+  what is left is the rounding at each end of the run, up to one reporting
+  step each: a first sample taken just under a step makes a small request
+  look like a whole percent. The error is about one step divided by
+  `percent_used`, so a figure over 20% of evidence is good to a few percent
+  and a figure over 2% is not.
 - **Usage the proxy does not see.** Requests made outside the proxy, such as
   claude.ai or a client signed in directly, raise the percent with no cost,
   which makes the figures too low. So do gaps in recording.

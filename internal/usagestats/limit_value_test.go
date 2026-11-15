@@ -302,6 +302,33 @@ func TestLimitValueReportsNoRatioWithoutARise(t *testing.T) {
 	}
 }
 
+func TestLimitValueSkipsARiseAcrossAReset(t *testing.T) {
+	store := openTestStore(t)
+	key := QuotaSeriesKey{Provider: "claude", AuthIndex: "auth-1", Account: "me@example.com", Window: "5h"}
+	firstReset, secondReset := testDay.Add(5*time.Hour), testDay.Add(11*time.Hour)
+	mustRecordQuota(t, store,
+		samplePoint(key, testDay, 10, firstReset),
+		samplePoint(key, testDay.Add(time.Hour), 12, firstReset),
+		samplePoint(key, testDay.Add(6*time.Hour), 20, secondReset),
+		samplePoint(key, testDay.Add(7*time.Hour), 21, secondReset),
+	)
+	for _, at := range []time.Duration{30 * time.Minute, 5*time.Hour + 30*time.Minute, 6*time.Hour + 30*time.Minute} {
+		mustInsert(t, store, Row{Timestamp: testDay.Add(at), Model: "claude-opus-5-5", AuthIndex: "auth-1", OutputTokens: 1000, TotalTokens: 1000})
+	}
+
+	result, errValue := store.LimitValue(context.Background(), Query{From: testDay, To: testDay.Add(24 * time.Hour)})
+	if errValue != nil {
+		t.Fatalf("limit value: %v", errValue)
+	}
+	if len(result.Series) != 1 {
+		t.Fatalf("series = %+v", result.Series)
+	}
+	value := result.Series[0]
+	if value.Intervals != 2 || value.PercentUsed != 3 || value.Requests != 2 {
+		t.Fatalf("value = %+v, want the 2%% and 1%% rises inside one window each and not the 8%% rise across the reset", value)
+	}
+}
+
 func TestLimitValueChargesARequestThatCompletesAsTheNextStartsBeforeIt(t *testing.T) {
 	store := configureTestRecorder(t)
 	record := func(at time.Time, utilization string) {
