@@ -164,6 +164,8 @@ conversations that start with the same text count as one session.
 A subagent has its own session id, and its main session is stored in
 `parent_session_id`. `sessions` counts subagents as sessions of their own.
 To count only main sessions, filter on `parent_session_id` with an empty value.
+Rows recorded before this version have no parent session id either, so that
+filter counts their subagent sessions as main sessions.
 
 Unlike every other measure, `sessions` is not a sum. One session can span
 models, days, and other groups, so the sessions of the groups add up to more
