@@ -19,7 +19,7 @@ var embeddedForkModelsJSON []byte
 func addForkModels(data *staticModelsJSON) {
 	var fork staticModelsJSON
 	if errUnmarshal := json.Unmarshal(embeddedForkModelsJSON, &fork); errUnmarshal != nil {
-		log.Warnf("registry: failed to parse fork_models.json, skipping fork models: %v", errUnmarshal)
+		log.WithError(errUnmarshal).Warn("registry: failed to parse fork_models.json, skipping fork models")
 		return
 	}
 	data.Claude = appendMissingModels(data.Claude, fork.Claude)
