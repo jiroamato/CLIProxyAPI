@@ -111,8 +111,8 @@ func isModelNameChar(c byte) bool {
 	return c == '.' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
 }
 
-// CostSplit is an API-equivalent cost split by the token bucket it pays for.
-type CostSplit struct {
+// costSplit is an API-equivalent cost split by the token bucket it pays for.
+type costSplit struct {
 	Input      float64
 	CacheRead  float64
 	CacheWrite float64
@@ -120,13 +120,13 @@ type CostSplit struct {
 	Output float64
 }
 
-// Total is the cost of every bucket.
-func (c CostSplit) Total() float64 {
+// total is the cost of every bucket.
+func (c costSplit) total() float64 {
 	return c.Input + c.CacheRead + c.CacheWrite + c.Output
 }
 
 // cost returns the USD cost of the given token buckets at this price.
-func (p Price) cost(input, cacheRead, cacheWrite, cacheWrite1h, output int64) CostSplit {
+func (p Price) cost(input, cacheRead, cacheWrite, cacheWrite1h, output int64) costSplit {
 	cacheReadPrice := p.Input
 	if p.CacheRead != nil {
 		cacheReadPrice = *p.CacheRead
@@ -141,7 +141,7 @@ func (p Price) cost(input, cacheRead, cacheWrite, cacheWrite1h, output int64) Co
 	}
 	// Cache writes without a reported TTL are billed at the default (5m) rate.
 	otherWrites := max(cacheWrite-cacheWrite1h, 0)
-	return CostSplit{
+	return costSplit{
 		Input:      float64(input) * p.Input / 1e6,
 		CacheRead:  float64(cacheRead) * cacheReadPrice / 1e6,
 		CacheWrite: (float64(otherWrites)*write5mPrice + float64(cacheWrite1h)*write1hPrice) / 1e6,
@@ -154,7 +154,7 @@ func (p Price) cost(input, cacheRead, cacheWrite, cacheWrite1h, output int64) Co
 func (t *PriceTable) priceMetrics(model string, m *Metrics) bool {
 	price, ok := t.Lookup(model)
 	if !ok {
-		m.setCost(CostSplit{})
+		m.setCost(costSplit{})
 		m.UnpricedTokens = m.TotalTokens
 		return false
 	}

@@ -128,6 +128,49 @@ func TestAggregateFoldsModelsIntoRequestedGroups(t *testing.T) {
 	}
 }
 
+func TestAggregateCostPartsAddUpAcrossFoldedModels(t *testing.T) {
+	store := openTestStore(t)
+	mustInsert(t, store,
+		Row{
+			Timestamp: testDay, Model: "claude-opus-5-5",
+			InputTokens: 1_000_000, CacheReadTokens: 1_000_000, CacheWriteTokens: 2_000_000,
+			CacheWrite5mTokens: 1_000_000, CacheWrite1hTokens: 1_000_000,
+			OutputTokens: 500_000, ReasoningTokens: 500_000, TotalTokens: 6_000_000,
+		},
+		// Codex reports cache writes without a lifetime; they are billed at the 5m rate.
+		Row{
+			Timestamp: testDay, Model: "gpt-6.2-sol",
+			InputTokens: 1_000_000, CacheReadTokens: 1_000_000, CacheWriteTokens: 1_000_000,
+			OutputTokens: 1_000_000, TotalTokens: 4_000_000,
+		},
+	)
+
+	aggregate, errAggregate := store.Aggregate(context.Background(), Query{
+		From: testDay, To: testDay.Add(time.Hour), GroupBy: []string{},
+	})
+	if errAggregate != nil {
+		t.Fatalf("aggregate: %v", errAggregate)
+	}
+	total := aggregate.Groups[0]
+	// Opus per 1M: input 4, cache read 0.2, 5m write 5, 1h write 8, output 20.
+	// Sol per 1M: input 2, cache read 0.1, 5m write 2.5, output 10.
+	want := map[string][2]float64{
+		"input":       {total.InputCostUSD, 4 + 2},
+		"cache read":  {total.CacheReadCostUSD, 0.2 + 0.1},
+		"cache write": {total.CacheWriteCostUSD, 5 + 8 + 2.5},
+		"output":      {total.OutputCostUSD, 20 + 10},
+	}
+	for name, pair := range want {
+		if !approxEqual(pair[0], pair[1]) {
+			t.Errorf("%s cost = %v, want %v", name, pair[0], pair[1])
+		}
+	}
+	parts := total.InputCostUSD + total.CacheReadCostUSD + total.CacheWriteCostUSD + total.OutputCostUSD
+	if !approxEqual(parts, total.CostUSD) || !approxEqual(total.CostUSD, 51.8) {
+		t.Fatalf("cost = %v, parts add up to %v, want both 51.8", total.CostUSD, parts)
+	}
+}
+
 func TestAggregateLeavesTheCostSplitOfUnpricedModelsEmpty(t *testing.T) {
 	store := openTestStore(t)
 	mustInsert(t, store,

@@ -305,8 +305,8 @@ func (s *Store) countSessions(ctx context.Context, exprs []string, where string,
 }
 
 // setCost stores a cost split and its total.
-func (m *Metrics) setCost(cost CostSplit) {
-	m.CostUSD = cost.Total()
+func (m *Metrics) setCost(cost costSplit) {
+	m.CostUSD = cost.total()
 	m.InputCostUSD = cost.Input
 	m.CacheReadCostUSD = cost.CacheRead
 	m.CacheWriteCostUSD = cost.CacheWrite
