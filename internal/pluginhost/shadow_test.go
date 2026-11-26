@@ -207,8 +207,6 @@ func TestShadowDirectoryDigestResolvesRelativePathsByWorkingDirectory(t *testing
 	workB := t.TempDir()
 	relDir := filepath.Join("plugins", runtime.GOOS, runtime.GOARCH)
 
-	// t.Chdir restores the original directory in a cleanup registered after the
-	// TempDir cleanups, so it runs first and Windows can remove the directories.
 	t.Chdir(workA)
 	digestA := shadowDirectoryDigest(relDir)
 
