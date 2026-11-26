@@ -161,10 +161,21 @@ type Store struct {
 	newestQuota map[QuotaSeriesKey]QuotaPoint
 }
 
+// Supported reports whether this build can record usage statistics. It is false
+// on platforms the SQLite driver does not support.
+func Supported() bool {
+	return sqliteAvailable
+}
+
+// Platform names the platform this build runs on, as GOOS/GOARCH.
+func Platform() string {
+	return runtime.GOOS + "/" + runtime.GOARCH
+}
+
 // Open opens (creating when needed) the usage database at path.
 func Open(path string) (*Store, error) {
 	if !sqliteAvailable {
-		return nil, fmt.Errorf("usagestats: SQLite is not available on %s", runtime.GOOS)
+		return nil, fmt.Errorf("usagestats: SQLite is not available on %s: %w", Platform(), errors.ErrUnsupported)
 	}
 	path = strings.TrimSpace(path)
 	if path == "" {

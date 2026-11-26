@@ -17,7 +17,9 @@ observability:
 ```
 
 The change applies on config reload, with no restart. Recording is off in Home
-(cluster) mode, where usage is reported to Home instead.
+(cluster) mode, where usage is reported to Home instead. It is also off on
+platforms the SQLite driver does not support, such as Solaris: the proxy logs a
+warning and the usage endpoints return `501 usage_statistics_unsupported`.
 
 ## What is stored
 
