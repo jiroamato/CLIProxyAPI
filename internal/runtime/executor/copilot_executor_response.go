@@ -176,13 +176,16 @@ func (e *CopilotExecutor) copilotStream(ctx context.Context, req cliproxyexecuto
 		typ := ojson.GetBytesNoCopy(data, "type").String()
 		switch from {
 		case sdktranslator.FormatOpenAI:
+			helps.ObserveChatTokenEvent(reporter, line)
 			usage.ObserveOpenAIStream(line)
 			chatFinished = chatFinished || ojson.GetBytesNoCopy(data, "choices.0.finish_reason").String() != ""
 			terminal = done
 		case sdktranslator.FormatClaude:
+			helps.ObserveClaudeTokenEvent(reporter, line)
 			usage.ObserveClaudeStream(line)
 			terminal = typ == "message_stop"
 		case sdktranslator.FormatOpenAIResponse:
+			helps.ObserveResponsesTokenEvent(reporter, line)
 			usage.ObserveResponsesStream(data)
 			terminal = typ == "response.completed" || typ == "response.incomplete"
 		}

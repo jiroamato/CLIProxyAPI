@@ -112,7 +112,7 @@ func (e *CopilotExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Au
 	if errPrepare != nil {
 		return nil, errPrepare
 	}
-	return e.doHTTPRequest(authorizedReq.Context(), auth, authorizedReq, nil)
+	return e.doHTTPRequest(authorizedReq.Context(), auth, authorizedReq, nil, false)
 }
 
 func (e *CopilotExecutor) prepareAuthorizedRequest(ctx context.Context, auth *cliproxyauth.Auth, req *http.Request) (*http.Request, error) {
@@ -140,9 +140,13 @@ func (e *CopilotExecutor) prepareAuthorizedRequest(ctx context.Context, auth *cl
 	return req, nil
 }
 
-func (e *CopilotExecutor) doHTTPRequest(ctx context.Context, auth *cliproxyauth.Auth, req *http.Request, reporter *helps.UsageReporter) (*http.Response, error) {
+func (e *CopilotExecutor) doHTTPRequest(ctx context.Context, auth *cliproxyauth.Auth, req *http.Request, reporter *helps.UsageReporter, stream bool) (*http.Response, error) {
 	client := *helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if reporter != nil && stream {
+		// copilotStream marks TTFT at the first token frame, not the first byte.
+		return reporter.TrackHTTPClientRoundTripOnly(&client).Do(req)
+	}
 	if reporter != nil {
 		return reporter.TrackHTTPClient(&client).Do(req)
 	}
@@ -158,6 +162,7 @@ type copilotPreparedRequest struct {
 	responsesCapture    *helps.CopilotResponsesCapture
 	messagesCapture     *helps.CopilotMessagesCapture
 	original, body      []byte
+	stream              bool
 }
 
 func (e *CopilotExecutor) prepare(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream, countOnly bool) (copilotPreparedRequest, error) {
@@ -270,7 +275,7 @@ func (e *CopilotExecutor) prepare(ctx context.Context, auth *cliproxyauth.Auth, 
 	if !countOnly && !stream && to == sdktranslator.FormatClaude && route.NonStreamingOutput > 0 && doc.Get("max_tokens").Int() > int64(route.NonStreamingOutput) {
 		return copilotPreparedRequest{}, statusErr{code: http.StatusBadRequest, msg: fmt.Sprintf("copilot: max_tokens exceeds this model's non-streaming limit of %d; lower max_tokens or enable streaming", route.NonStreamingOutput)}
 	}
-	return copilotPreparedRequest{responseTranslators: responseTranslators, route: route, input: input, original: original, body: doc.Bytes(), messagesCapture: messagesCapture, responsesCapture: responsesCapture}, nil
+	return copilotPreparedRequest{responseTranslators: responseTranslators, route: route, input: input, original: original, body: doc.Bytes(), messagesCapture: messagesCapture, responsesCapture: responsesCapture, stream: stream}, nil
 }
 
 func (e *CopilotExecutor) send(ctx context.Context, auth *cliproxyauth.Auth, opts cliproxyexecutor.Options, prepared *copilotPreparedRequest, reporter *helps.UsageReporter) (*http.Response, error) {
@@ -312,7 +317,7 @@ func (e *CopilotExecutor) send(ctx context.Context, auth *cliproxyauth.Auth, opt
 		AuthType:  authType,
 		AuthValue: authValue,
 	})
-	resp, errDo := e.doHTTPRequest(authorizedReq.Context(), auth, authorizedReq, reporter)
+	resp, errDo := e.doHTTPRequest(authorizedReq.Context(), auth, authorizedReq, reporter, prepared.stream)
 	if errDo != nil {
 		helps.RecordAPIResponseError(ctx, e.cfg, errDo)
 		return nil, errDo
