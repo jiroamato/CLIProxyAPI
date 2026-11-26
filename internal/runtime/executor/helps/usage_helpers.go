@@ -1821,6 +1821,7 @@ func ParseOpenAIUsage(data []byte) usage.Detail {
 	if outputNode := root.Get("output"); outputNode.Exists() && outputNode.IsArray() {
 		applyResponsesOutputItemsUsage(&detail, outputNode)
 	}
+	detail.StopReason = responsesStopReason(root, detail)
 	return detail
 }
 

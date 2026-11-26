@@ -32,18 +32,23 @@ func claudeStopReason(root ojson.Result) usage.StopReason {
 	return claudeStopReasons[wire]
 }
 
-// responsesStopReason reads a terminal Responses event. Responses has no stop
-// reason for tool calls, so a completed response stopped for a tool when its
-// output asks the client to run one.
+// responsesStopReason reads a terminal Responses event, or a complete Response
+// object as returned without streaming. Responses has no stop reason for tool
+// calls, so a completed response stopped for a tool when its output asks the
+// client to run one.
 func responsesStopReason(root ojson.Result, detail usage.Detail) usage.StopReason {
-	switch root.Get("response.status").String() {
+	response := root.Get("response")
+	if !response.Exists() && root.Get("object").String() == "response" {
+		response = root
+	}
+	switch response.Get("status").String() {
 	case "completed":
 		if tools := detail.ToolUsageDetails; tools != nil && tools.ToolCallsRequested != nil && *tools.ToolCallsRequested > 0 {
 			return usage.StopReasonToolUse
 		}
 		return usage.StopReasonEndTurn
 	case "incomplete":
-		return responsesIncompleteReasons[root.Get("response.incomplete_details.reason").String()]
+		return responsesIncompleteReasons[response.Get("incomplete_details.reason").String()]
 	default:
 		return ""
 	}

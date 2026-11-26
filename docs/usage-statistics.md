@@ -131,19 +131,20 @@ The proxy translates each protocol's value once, when it parses the response:
 
 - Anthropic Messages reports `stop_reason` at the top of a response, and in
   `delta` of the `message_delta` event of a stream.
-- OpenAI Responses has no stop reason, so the proxy reads `response.status` and
-  `response.incomplete_details.reason` of the terminal event. The items that ask
-  the client to run a tool are `function_call`, `custom_tool_call`,
-  `local_shell_call`, `shell_call`, `computer_call`, and `apply_patch_call`.
-  Server-side tools, such as web search, run inside the response and do not end
-  it.
+- OpenAI Responses has no stop reason, so the proxy reads `status` and
+  `incomplete_details.reason` of the response: in the terminal event of a
+  stream, or at the top of a complete response returned without streaming.
+  The items that ask the client to run a tool are `function_call`,
+  `custom_tool_call`, `local_shell_call`, `shell_call`, `computer_call`, and
+  `apply_patch_call`. Server-side tools, such as web search, run inside the
+  response and do not end it.
 - Every other value is stored empty.
 
 The Claude executor, for OAuth and API keys, and the Codex executor, over HTTP
 and websocket, record a stop reason for streamed and non-streamed requests.
 Other executors that parse Anthropic Messages or OpenAI Responses with the same
-code, such as xAI, Kimi, Meta, and plugin executors, record one too, but only
-Claude and Codex are tested end to end. OpenAI Chat Completions
+code, such as Copilot, xAI, Kimi, Meta, and plugin executors, record one too,
+but only Claude and Codex are tested end to end. OpenAI Chat Completions
 (`finish_reason`), Gemini (`finishReason`), and every other protocol store an
 empty stop reason, so their requests count no turns.
 
