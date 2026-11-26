@@ -20,9 +20,17 @@ const (
 	usageStatsSettingsMaxSize = 1 << 20
 )
 
-// usageStatsStore returns the open usage store, or writes a 409 and returns nil
-// when usage statistics are not being recorded.
+// usageStatsStore returns the open usage store, or writes an error and returns
+// nil when usage statistics are not being recorded: a 501 when this platform
+// cannot record them, otherwise a 409.
 func usageStatsStore(c *gin.Context) *usagestats.Store {
+	if !usagestats.Supported() {
+		c.JSON(http.StatusNotImplemented, gin.H{
+			"error":   "usage_statistics_unsupported",
+			"message": fmt.Sprintf("usage statistics are not available on %s: SQLite is not supported there", usagestats.Platform()),
+		})
+		return nil
+	}
 	store := usagestats.Current()
 	if store == nil {
 		c.JSON(http.StatusConflict, gin.H{

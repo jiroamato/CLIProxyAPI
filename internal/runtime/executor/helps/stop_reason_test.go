@@ -79,3 +79,34 @@ func TestParseCodexUsageStopReason(t *testing.T) {
 		})
 	}
 }
+
+// Non-streamed Responses replies, such as Copilot's /responses route and plugin
+// executors, return the complete Response object instead of a terminal event.
+func TestParseOpenAIUsageResponseObjectStopReason(t *testing.T) {
+	const usageJSON = `{"input_tokens":10,"output_tokens":5,"total_tokens":15}`
+	message := `{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[]}]}`
+	functionCall := `{"type":"function_call","id":"fc_1","call_id":"call_1","status":"completed","name":"shell","arguments":"{}"}`
+	response := func(status, extra, output string) string {
+		return fmt.Sprintf(`{"id":"resp_1","object":"response","status":%q%s,"output":[%s],"usage":%s}`, status, extra, output, usageJSON)
+	}
+	tests := []struct {
+		name    string
+		payload string
+		want    usage.StopReason
+	}{
+		{"completed with a message", response("completed", "", message), usage.StopReasonEndTurn},
+		{"completed with a function call", response("completed", "", message+","+functionCall), usage.StopReasonToolUse},
+		{"incomplete at the output limit", response("incomplete", `,"incomplete_details":{"reason":"max_output_tokens"}`, message), usage.StopReasonMaxTokens},
+		{"failed", response("failed", "", ""), ""},
+		// Chat Completions has no Responses status, so it stays empty.
+		{"chat completion", `{"id":"chat_1","object":"chat.completion","status":"completed","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			detail := ParseOpenAIUsage([]byte(tc.payload))
+			if detail.StopReason != tc.want {
+				t.Fatalf("stop reason = %q, want %q", detail.StopReason, tc.want)
+			}
+		})
+	}
+}

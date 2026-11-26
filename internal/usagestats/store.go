@@ -14,13 +14,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
-	// Pure-Go SQLite driver, registered as "sqlite".
-	_ "modernc.org/sqlite"
 )
 
 // DefaultFileName is the database file name placed under the auth directory.
@@ -162,8 +161,22 @@ type Store struct {
 	newestQuota map[QuotaSeriesKey]QuotaPoint
 }
 
+// Supported reports whether this build can record usage statistics. It is false
+// on platforms the SQLite driver does not support.
+func Supported() bool {
+	return sqliteAvailable
+}
+
+// Platform names the platform this build runs on, as GOOS/GOARCH.
+func Platform() string {
+	return runtime.GOOS + "/" + runtime.GOARCH
+}
+
 // Open opens (creating when needed) the usage database at path.
 func Open(path string) (*Store, error) {
+	if !sqliteAvailable {
+		return nil, fmt.Errorf("usagestats: SQLite is not available on %s: %w", Platform(), errors.ErrUnsupported)
+	}
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil, errors.New("usagestats: empty database path")

@@ -103,7 +103,9 @@ func TestResponsesWebsocketRequestLoggingLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = conn.Close() }()
-			_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+			// These bounds only catch a hung handler: request logs go through temp
+			// files, which have stalled for over 5s on a loaded Windows run.
+			_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 			send := func(payload string) {
 				t.Helper()
 				if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(payload)); errWrite != nil {
@@ -127,7 +129,7 @@ func TestResponsesWebsocketRequestLoggingLifecycle(t *testing.T) {
 					if n != 0 {
 						t.Fatalf("open WebSocket retained %d deferred requests", n)
 					}
-				case <-time.After(5 * time.Second):
+				case <-time.After(30 * time.Second):
 					t.Fatal("request capture was not observed")
 				}
 			}
@@ -163,7 +165,7 @@ func TestResponsesWebsocketRequestLoggingLifecycle(t *testing.T) {
 			_ = conn.Close()
 			select {
 			case <-handlerDone:
-			case <-time.After(5 * time.Second):
+			case <-time.After(30 * time.Second):
 				t.Fatal("WebSocket handler did not finish")
 			}
 			if got := len(executor.Payloads()); got != 3 {

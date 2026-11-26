@@ -33,6 +33,10 @@ func drainUsageRecords(m *usage.Manager) bool {
 // instead, so nothing is stored locally there.
 func (s *Service) applyUsageStatsConfig(cfg *config.Config) {
 	enabled := cfg != nil && cfg.UsageStatisticsEnabled && !cfg.Home.Enabled
+	if enabled && !usagestats.Supported() {
+		log.Warnf("usage statistics disabled: SQLite is not available on %s", usagestats.Platform())
+		enabled = false
+	}
 	path := ""
 	if enabled {
 		authDir, errResolve := util.ResolveAuthDir(cfg.AuthDir)

@@ -17,7 +17,9 @@ observability:
 ```
 
 The change applies on config reload, with no restart. Recording is off in Home
-(cluster) mode, where usage is reported to Home instead.
+(cluster) mode, where usage is reported to Home instead. It is also off on
+platforms the SQLite driver does not support, such as Solaris: the proxy logs a
+warning and the usage endpoints return `501 usage_statistics_unsupported`.
 
 ## What is stored
 
@@ -76,6 +78,12 @@ all history.
 - A model name matches its exact price first, then the longest priced name it
   extends at a separator, so `claude-opus-4-5-20251101` uses the
   `claude-opus-4-5` price.
+- Names match case-insensitively, and a Claude version spelled with dots, as
+  GitHub Copilot does (`claude-opus-5.5`), matches the dashed price
+  (`claude-opus-5-5`).
+- A provider-namespaced route, such as `copilot/claude-opus-5.5` or
+  `devin/swe-2`, uses its own price when it has one, and otherwise the price of
+  the model after the last `/`.
 - Models without a price are listed on the Usage page, and their tokens are
   left out of the cost. Add or override prices with the page's **Prices** button.
 - Service tiers, batch discounts, and long-context surcharges are not modelled.
@@ -125,19 +133,20 @@ The proxy translates each protocol's value once, when it parses the response:
 
 - Anthropic Messages reports `stop_reason` at the top of a response, and in
   `delta` of the `message_delta` event of a stream.
-- OpenAI Responses has no stop reason, so the proxy reads `response.status` and
-  `response.incomplete_details.reason` of the terminal event. The items that ask
-  the client to run a tool are `function_call`, `custom_tool_call`,
-  `local_shell_call`, `shell_call`, `computer_call`, and `apply_patch_call`.
-  Server-side tools, such as web search, run inside the response and do not end
-  it.
+- OpenAI Responses has no stop reason, so the proxy reads `status` and
+  `incomplete_details.reason` of the response: in the terminal event of a
+  stream, or at the top of a complete response returned without streaming.
+  The items that ask the client to run a tool are `function_call`,
+  `custom_tool_call`, `local_shell_call`, `shell_call`, `computer_call`, and
+  `apply_patch_call`. Server-side tools, such as web search, run inside the
+  response and do not end it.
 - Every other value is stored empty.
 
 The Claude executor, for OAuth and API keys, and the Codex executor, over HTTP
 and websocket, record a stop reason for streamed and non-streamed requests.
 Other executors that parse Anthropic Messages or OpenAI Responses with the same
-code, such as xAI, Kimi, Meta, and plugin executors, record one too, but only
-Claude and Codex are tested end to end. OpenAI Chat Completions
+code, such as Copilot, xAI, Kimi, Meta, and plugin executors, record one too,
+but only Claude and Codex are tested end to end. OpenAI Chat Completions
 (`finish_reason`), Gemini (`finishReason`), and every other protocol store an
 empty stop reason, so their requests count no turns.
 
