@@ -3051,12 +3051,15 @@ func TestResponsesWebsocketTimelineRecordsDisconnectEvent(t *testing.T) {
 	}
 	_ = conn.Close()
 
+	// The timeline arrives as soon as the handler returns. The bound only catches
+	// a hung handler: reopening the timeline temp file has stalled for over 5s on
+	// a loaded Windows run.
 	select {
 	case timeline := <-timelineCh:
 		if !strings.Contains(timeline, "Event: websocket.disconnect") {
 			t.Fatalf("websocket timeline missing disconnect event: %s", timeline)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for websocket timeline")
 	}
 }
