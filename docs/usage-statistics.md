@@ -76,6 +76,12 @@ all history.
 - A model name matches its exact price first, then the longest priced name it
   extends at a separator, so `claude-opus-4-5-20251101` uses the
   `claude-opus-4-5` price.
+- Names match case-insensitively, and a Claude version spelled with dots, as
+  GitHub Copilot does (`claude-opus-5.5`), matches the dashed price
+  (`claude-opus-5-5`).
+- A provider-namespaced route, such as `copilot/claude-opus-5.5` or
+  `devin/swe-2`, uses its own price when it has one, and otherwise the price of
+  the model after the last `/`.
 - Models without a price are listed on the Usage page, and their tokens are
   left out of the cost. Add or override prices with the page's **Prices** button.
 - Service tiers, batch discounts, and long-context surcharges are not modelled.

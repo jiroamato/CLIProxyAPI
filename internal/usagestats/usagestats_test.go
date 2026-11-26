@@ -405,7 +405,9 @@ func TestPriceLookupMatchesBaseModelAtSeparators(t *testing.T) {
 }
 
 func TestPriceLookupMatchesCopilotDottedClaudeVersions(t *testing.T) {
-	table, errTable := NewPriceTable(map[string]Price{"claude-opus-5-5": {Input: 5}, "claude-opus-5": {Input: 4}, "mystery-9-4": {Input: 3}})
+	table, errTable := NewPriceTable(map[string]Price{
+		"claude-opus-5-5": {Input: 5}, "claude-opus-5": {Input: 4}, "claude-opus": {Input: 1}, "mystery-9-4": {Input: 3},
+	})
 	if errTable != nil {
 		t.Fatalf("new price table: %v", errTable)
 	}
@@ -424,6 +426,39 @@ func TestPriceLookupMatchesCopilotDottedClaudeVersions(t *testing.T) {
 	if price, ok := table.Lookup("mystery-9.4"); ok {
 		t.Errorf("Lookup(mystery-9.4) = %+v, want no match", price)
 	}
+	// Both spellings are one model, so they cannot carry two prices.
+	duplicate := Settings{ModelPrices: map[string]Price{"claude-opus-5.5": {Input: 1}, "claude-opus-5-5": {Input: 2}}}
+	if errValidate := duplicate.Validate(); errValidate == nil {
+		t.Error("Validate accepted claude-opus-5.5 and claude-opus-5-5 as separate models")
+	}
+}
+
+func TestPriceLookupFallsBackFromProviderNamespace(t *testing.T) {
+	table, errTable := NewPriceTable(map[string]Price{
+		"claude-opus-5-5": {Input: 5}, "gpt-6-sol": {Input: 6}, "devin/swe-2": {Input: 2}, "copilot/gpt-6-sol": {Input: 7},
+	})
+	if errTable != nil {
+		t.Fatalf("new price table: %v", errTable)
+	}
+	cases := map[string]float64{
+		// Copilot and Devin publish their routes as "<provider>/<model>".
+		"copilot/claude-opus-5.5":      5,
+		"Copilot/claude-opus-5.5-high": 5,
+		"devin/claude-opus-5-5":        5,
+		"devin/swe-2":                  2,
+		// A namespaced price wins over the bare model's.
+		"copilot/gpt-6-sol": 7,
+		"other/gpt-6-sol":   6,
+	}
+	for model, want := range cases {
+		price, ok := table.Lookup(model)
+		if !ok || price.Input != want {
+			t.Errorf("Lookup(%q) = %v, %v; want input %v", model, price.Input, ok, want)
+		}
+	}
+	if price, ok := table.Lookup("copilot/unknown-model"); ok {
+		t.Errorf("Lookup(copilot/unknown-model) = %+v, want no match", price)
+	}
 }
 
 func TestBuiltInPricesCoverCurrentModels(t *testing.T) {
@@ -431,7 +466,7 @@ func TestBuiltInPricesCoverCurrentModels(t *testing.T) {
 	if errTable != nil {
 		t.Fatalf("new price table: %v", errTable)
 	}
-	for _, model := range []string{"claude-fable-5-2", "claude-opus-4-5-20251101", "gpt-6-sol", "gpt-6.2-sol", "gpt-6.2-astra", "gemini-4-argon-high", "gemini-4-hydrogen-xhigh", "gemini-4-neon-xhigh", "claude-opus-5.5", "claude-sonnet-5.5", "claude-haiku-4.5", "claude-fable-5.1"} {
+	for _, model := range []string{"claude-fable-5-2", "claude-opus-4-5-20251101", "gpt-6-sol", "gpt-6.2-sol", "gpt-6.2-astra", "gemini-4-argon-high", "gemini-4-hydrogen-xhigh", "gemini-4-neon-xhigh", "copilot/claude-opus-5.5", "copilot/claude-sonnet-5.5", "copilot/claude-haiku-4.5", "copilot/claude-fable-5.1", "copilot/gpt-6.2-sol", "devin/claude-opus-5-5"} {
 		if price, ok := table.Lookup(model); !ok || price.Input <= 0 || price.Output <= 0 {
 			t.Errorf("Lookup(%q) = %+v, %v; want a positive price", model, price, ok)
 		}

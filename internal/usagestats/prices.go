@@ -81,7 +81,9 @@ func NewPriceTable(overrides map[string]Price) (*PriceTable, error) {
 // Lookup returns the price for model. It matches the exact name first, then
 // the longest priced name that model extends at a separator, so dated or
 // suffixed variants ("claude-opus-4-5-20251101", "gemini-4-argon-high")
-// resolve to their base model while "gpt-5.4" never matches "gpt-5".
+// resolve to their base model while "gpt-5.4" never matches "gpt-5". A
+// provider-namespaced route ("copilot/claude-opus-5.5", "devin/swe-2") falls
+// back to the price of its bare model unless the namespaced name has its own.
 func (t *PriceTable) Lookup(model string) (Price, bool) {
 	if t == nil {
 		return Price{}, false
@@ -90,10 +92,8 @@ func (t *PriceTable) Lookup(model string) (Price, bool) {
 	if price, ok := t.lookup(model); ok {
 		return price, true
 	}
-	// GitHub Copilot spells Claude versions with dots ("claude-opus-5.5")
-	// where Anthropic's price list uses dashes ("claude-opus-5-5").
-	if strings.HasPrefix(model, "claude-") && strings.Contains(model, ".") {
-		return t.lookup(strings.ReplaceAll(model, ".", "-"))
+	if slash := strings.LastIndexByte(model, '/'); slash >= 0 {
+		return t.lookup(model[slash+1:])
 	}
 	return Price{}, false
 }
@@ -114,8 +114,16 @@ func (t *PriceTable) lookup(model string) (Price, bool) {
 	return Price{}, false
 }
 
+// normalizeModel returns the spelling prices are keyed by. Names match
+// case-insensitively, and GitHub Copilot's dotted Claude versions
+// ("claude-opus-5.5") match Anthropic's dashed ones ("claude-opus-5-5").
 func normalizeModel(model string) string {
-	return strings.ToLower(strings.TrimSpace(model))
+	model = strings.ToLower(strings.TrimSpace(model))
+	base := model[strings.LastIndexByte(model, '/')+1:]
+	if strings.HasPrefix(base, "claude-") {
+		model = model[:len(model)-len(base)] + strings.ReplaceAll(base, ".", "-")
+	}
+	return model
 }
 
 // isModelNameChar reports whether c continues a model name component. Dots
